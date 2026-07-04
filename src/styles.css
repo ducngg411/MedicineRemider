@@ -106,7 +106,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
     env(safe-area-inset-top, 0px)
     + var(--header-gap-top)
     + var(--header-height)
-    + var(--header-gap-bottom)
   );
   background: #eceae0;
   z-index: 100;
@@ -1641,6 +1640,8 @@ input, textarea, select {
   line-height: 1.35;
   transition: border-color var(--duration-base) ease;
   touch-action: manipulation;
+  display: block;
+  box-sizing: border-box;
 }
 input:focus, textarea:focus, select:focus {
   outline: none; border-color: var(--color-vast-ink);
@@ -1907,15 +1908,31 @@ body.keyboard-open .auth-shell {
     padding: 10px 12px;
   }
 
-  /* Even more compact padding for two-cols grid fields */
+  /* Tight padding and font size for two-cols grid fields to prevent horizontal overlap */
   .two-cols input, .two-cols select {
-    padding: 10px 8px;
+    padding: 10px 4px;
+    font-size: 14px;
+    text-align: center;
   }
 
-  /* Optimize padding for date/time controls with built-in browser UI indicators */
+  /* Optimize padding and layout for date/time controls with built-in browser UI indicators */
   input[type="date"], input[type="time"], input[type="datetime-local"] {
-    padding-right: 4px;
-    padding-left: 8px;
+    padding-right: 2px;
+    padding-left: 2px;
+  }
+
+  /* Reset Safari's default internal padding for date/time inputs inside grids */
+  .two-cols input::-webkit-datetime-edit {
+    display: inline-flex;
+    padding: 0;
+  }
+  .two-cols input::-webkit-datetime-edit-fields-wrapper {
+    padding: 0;
+  }
+  .two-cols input::-webkit-date-and-time-value {
+    margin: 0;
+    padding: 0;
+    min-height: 0;
   }
 
   .auth-card, .onboarding-card { padding: 18px; border-radius: 20px; }
