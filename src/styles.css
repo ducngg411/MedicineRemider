@@ -97,8 +97,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 .app-header {
   position: fixed;
   top: env(safe-area-inset-top, 0px);
-  left: 0;
-  right: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
   height: var(--header-height);
   z-index: 50;
   /* Use padding to create page margins */
@@ -116,8 +117,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 
   /* Constrain content width on large screens */
   max-width: 720px;
-  margin-left: auto;
-  margin-right: auto;
+  box-sizing: border-box;
 }
 
 /* ── App Main (scrollable content area) ── */
@@ -1623,7 +1623,7 @@ input:focus, textarea:focus, select:focus {
 textarea { min-height: 96px; resize: vertical; }
 /* Use minmax(0, 1fr) so columns never overflow their container */
 .two-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
-.two-cols > * { min-width: 0; }
+.two-cols > * { min-width: 0; overflow: hidden; }
 .inline-form { display: grid; grid-template-columns: 1fr auto; gap: 10px; }
 
 /* ── Upload ── */
@@ -1860,9 +1860,10 @@ body.keyboard-open .auth-shell {
   .course-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .draft-actions { grid-template-columns: 1fr 1fr; }
 }
-@media (max-width: 375px) {
-  /* Very small screens: forms go single column */
+@media (max-width: 420px) {
+  /* Mobile screens: forms go single column to prevent overflow */
   .two-cols { grid-template-columns: 1fr; }
+  .med-edit-two-cols { grid-template-columns: 1fr; }
   .auth-card, .onboarding-card { padding: 18px; border-radius: 20px; }
   .notification-nudge { grid-template-columns: 1fr; }
   .notification-nudge .secondary-button { width: 100%; }
