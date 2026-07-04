@@ -29,6 +29,10 @@
   --duration-fast: 80ms;
   --duration-base: 150ms;
   --duration-slow: 300ms;
+  /* ── App Shell layout tokens ── */
+  --header-height: 118px;
+  --bottom-nav-height: 78px;
+  --page-x: 16px;
   font-family: var(--font-figtree);
   color: var(--color-vast-ink);
   background: var(--color-lumen-cream);
@@ -83,14 +87,49 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
   outline-offset: 2px;
 }
 
-/* ── Shell ── */
+/* ── App Shell: fixed header + scrollable content + fixed nav ── */
 .app-shell {
+  position: relative;
   max-width: 720px;
-  min-height: 100vh;
   min-height: 100dvh;
   margin: 0 auto;
-  /* 120px = nav height (~62px) + bottom offset (14px) + safe buffer (44px) */
-  padding: max(20px, env(safe-area-inset-top)) 16px calc(120px + env(safe-area-inset-bottom));
+  background: #eceae0;
+}
+
+/* ── App Header (fixed) ── */
+.app-header {
+  position: fixed;
+  top: env(safe-area-inset-top, 0);
+  left: var(--page-x);
+  right: var(--page-x);
+  /* constrain to same max-width as shell */
+  max-width: calc(720px - var(--page-x) * 2);
+  margin: 0 auto;
+  height: var(--header-height);
+  z-index: 50;
+  overflow: hidden;
+
+  background: var(--color-vast-ink);
+  color: var(--color-lumen-cream);
+  border-radius: 0 0 28px 28px;
+  padding: 20px 20px 18px;
+  box-shadow: var(--shadow-md);
+
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+/* ── App Main (scrollable content area) ── */
+.app-main {
+  padding-left: var(--page-x);
+  padding-right: var(--page-x);
+  /* Push content below fixed header + safe area + gap */
+  padding-top: calc(var(--header-height) + env(safe-area-inset-top, 0px) + 24px);
+  /* Push content above fixed bottom nav + safe area + gap */
+  padding-bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px) + 24px);
+  display: grid;
+  gap: 18px;
 }
 
 .auth-shell {
@@ -517,28 +556,33 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
   line-height: 1.35;
 }
 
-/* ── Top Chrome ── */
-.top-chrome {
-  position: sticky;
-  /* Stick BELOW the system status bar, not behind the iPhone notch/Dynamic Island */
-  top: env(safe-area-inset-top, 0);
-  z-index: 20;
-  display: flex; align-items: center; justify-content: space-between; gap: 16px;
-  margin: -4px -4px 20px;
-  /* Extra top padding so text is never behind the safe area when at rest */
-  padding: max(16px, calc(env(safe-area-inset-top, 0px) + 8px)) 20px 18px;
-  background: var(--color-vast-ink);
-  border-radius: 0 0 28px 28px;
-  box-shadow: var(--shadow-md);
+/* ── App Header inner layout ── */
+/* (The fixed positioning is on .app-header; .top-chrome kept as alias for backwards compat) */
+.top-chrome, .app-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
-.top-chrome h1 {
-  margin: 0; font-family: var(--font-eb-garamond); font-weight: 400; letter-spacing: -0.01em;
-  font-size: clamp(26px, 8vw, 40px); line-height: 0.92;
+.top-chrome .header-top-row,
+.app-header .header-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.top-chrome h1, .app-header h1 {
+  margin: 0;
+  font-family: var(--font-eb-garamond);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  font-size: clamp(26px, 8vw, 40px);
+  line-height: 0.92;
   color: var(--color-lumen-cream);
 }
 /* ── Eyebrow ── */
 .eyebrow {
-  margin: 0 0 2px; color: rgba(255,255,220,.5);
+  margin: 0;
+  color: rgba(255,255,220,.5);
   font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em;
 }
 
@@ -558,7 +602,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 .badge.dark { color: var(--color-lumen-cream); background: var(--color-vast-ink); border-color: var(--color-vast-ink); }
 
 /* ── Layout ── */
-.app-main, .view-stack { display: grid; gap: 22px; }
+/* .app-main padding is defined above in the App Shell section */
+.view-stack { display: grid; gap: 20px; }
 
 /* ── Notice ── */
 .notice {
@@ -1423,7 +1468,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 }
 .med-edit-two-cols {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
 }
 .med-edit-actions {
@@ -1557,9 +1602,11 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 .form-card { display: grid; gap: 14px; }
 .form-card label { display: grid; gap: 7px; color: var(--color-charcoal); font-size: 14px; font-weight: 600; }
 input, textarea, select {
-  width: 100%; min-height: 48px;
+  /* min-width:0 prevents grid blowout */
+  width: 100%; min-width: 0; min-height: 48px;
   border: 2px solid var(--color-vast-ink); border-radius: 12px; padding: 12px 14px;
   color: var(--color-vast-ink); background: var(--color-lumen-cream);
+  /* 16px prevents iOS Safari from zooming on focus */
   font-size: 16px;
   line-height: 1.35;
   transition: border-color var(--duration-base) ease;
@@ -1570,7 +1617,9 @@ input:focus, textarea:focus, select:focus {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-lavender-whisper) 60%, transparent);
 }
 textarea { min-height: 96px; resize: vertical; }
-.two-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+/* Use minmax(0, 1fr) so columns never overflow their container */
+.two-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.two-cols > * { min-width: 0; }
 .inline-form { display: grid; grid-template-columns: 1fr auto; gap: 10px; }
 
 /* ── Upload ── */
@@ -1726,19 +1775,31 @@ textarea { min-height: 96px; resize: vertical; }
 }
 .empty-state p { margin: 0; }
 
-/* ── Bottom Nav ── */
+/* ── Bottom Nav (fixed) ── */
 .bottom-nav {
-  position: fixed; right: 16px; bottom: max(14px, env(safe-area-inset-bottom)); left: 16px;
-  z-index: 30; display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px;
-  max-width: 688px; margin: 0 auto; padding: 6px;
-  border-radius: 20px;
+  position: fixed;
+  left: var(--page-x);
+  right: var(--page-x);
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  z-index: 60;
+  height: var(--bottom-nav-height);
+  max-width: calc(720px - var(--page-x) * 2);
+  margin: 0 auto;
+
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+  padding: 6px;
+
+  border-radius: 28px;
   background: var(--color-vast-ink);
   box-shadow: var(--shadow-lg);
   transform: translateZ(0);
+  transition: opacity var(--duration-base) ease, transform var(--duration-base) var(--ease-out-swift);
 }
 .bottom-nav button {
   display: grid; place-items: center; gap: 3px;
-  min-height: 50px; border: 0; border-radius: 14px;
+  height: 100%; border: 0; border-radius: 20px;
   color: rgba(255,255,220,.45); background: transparent;
   font-size: 11px; font-weight: 700; letter-spacing: 0.02em;
   transition: color var(--duration-base) ease, background var(--duration-base) ease,
@@ -1753,16 +1814,12 @@ textarea { min-height: 96px; resize: vertical; }
   color: var(--color-vast-ink) !important;
 }
 
+/* Hide nav when keyboard is open */
 body.keyboard-open .bottom-nav {
   opacity: 0;
   pointer-events: none;
   transform: translateY(calc(100% + 24px)) translateZ(0);
 }
-
-body.keyboard-open .app-shell {
-  padding-bottom: max(24px, env(safe-area-inset-bottom));
-}
-
 body.keyboard-open .auth-shell {
   align-items: start;
 }
@@ -1787,30 +1844,27 @@ body.keyboard-open .auth-shell {
 
 /* ── Responsive ── */
 @media (min-width: 680px) {
-  .app-shell { padding-inline: 24px; }
+  :root { --page-x: 24px; }
+  .app-header, .bottom-nav { left: 24px; right: 24px; }
   .dose-grid { grid-template-columns: 1fr 1fr; }
   .cabinet-grid { grid-template-columns: 1fr 1fr; }
   .course-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .draft-actions { grid-template-columns: 1fr 1fr; }
 }
-@media (max-width: 360px) {
-  /* Only truly small screens get single-column forms */
-  .two-cols, .inline-form { grid-template-columns: 1fr; }
-  .auth-card, .onboarding-card { padding: 20px; border-radius: 20px; }
+@media (max-width: 375px) {
+  /* Very small screens: forms go single column */
+  .two-cols { grid-template-columns: 1fr; }
+  .auth-card, .onboarding-card { padding: 18px; border-radius: 20px; }
   .notification-nudge { grid-template-columns: 1fr; }
   .notification-nudge .secondary-button { width: 100%; }
   .tracking-form-actions, .compare-grid { grid-template-columns: 1fr; }
   .tracking-entry-card { grid-template-columns: 74px 1fr; }
   .tracking-entry-card .icon-button { grid-column: 1 / -1; width: 100%; }
-}
-@media (max-width: 420px) {
-  .top-chrome { border-radius: 0 0 20px 20px; }
-  .progress-hero { grid-template-columns: 1fr auto; align-items: start; }
-  .progress-hero .add-fab { grid-column: 2; grid-row: 3; justify-self: end; }
   .dashboard-widgets { gap: 8px !important; }
   .dashboard-widgets .water-card,
   .dashboard-widgets .doctor-notes-card { padding: 10px 8px !important; gap: 8px !important; min-width: 0 !important; }
   .bottom-nav button { font-size: 10px; }
+  .app-header { border-radius: 0 0 20px 20px; }
 }
 
 /* ── Doctor Notes Sheet, Header Button and Entry Card ── */
