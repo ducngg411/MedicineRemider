@@ -30,7 +30,9 @@
   --duration-base: 150ms;
   --duration-slow: 300ms;
   /* ── App Shell layout tokens ── */
-  --header-height: 118px;
+  --header-height: 132px;
+  --header-gap-top: 12px;
+  --header-gap-bottom: 24px;
   --bottom-nav-height: 78px;
   --page-x: 16px;
   font-family: var(--font-figtree);
@@ -93,31 +95,50 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
   background: #eceae0;
 }
 
-/* ── App Header (fixed, full-width wrapper) ── */
-.app-header {
+/* ── Header Layer (fixed mask that covers safe-area + header zone) ── */
+/* Prevents scroll-bleed: content never shows through the gap above the header */
+.header-layer {
   position: fixed;
-  top: env(safe-area-inset-top, 0px);
-  left: 50%;
-  transform: translateX(-50%);
-  width: 100%;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: calc(
+    env(safe-area-inset-top, 0px)
+    + var(--header-gap-top)
+    + var(--header-height)
+    + var(--header-gap-bottom)
+  );
+  background: #eceae0;
+  z-index: 100;
+  pointer-events: none;
+  /* Constrain on large screens */
+  max-width: 720px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* ── App Header (floating card inside header-layer) ── */
+.app-header {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + var(--header-gap-top));
+  left: var(--page-x);
+  right: var(--page-x);
   height: var(--header-height);
-  z-index: 50;
-  /* Use padding to create page margins */
+  z-index: 100;
+
   padding: 20px var(--page-x) 18px;
   overflow: hidden;
 
   background: var(--color-vast-ink);
   color: var(--color-lumen-cream);
-  border-radius: 0 0 28px 28px;
+  border-radius: 28px;
   box-shadow: var(--shadow-md);
 
   display: flex;
   flex-direction: column;
   justify-content: space-between;
 
-  /* Constrain content width on large screens */
-  max-width: 720px;
-  box-sizing: border-box;
+  pointer-events: auto;
 }
 
 /* ── App Main (scrollable content area) ── */
@@ -128,8 +149,13 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
   width: 100%;
   padding-left: var(--page-x);
   padding-right: var(--page-x);
-  /* CRITICAL: push content below fixed header */
-  padding-top: calc(var(--header-height) + env(safe-area-inset-top, 0px) + 24px);
+  /* CRITICAL: push content below the full header-layer height */
+  padding-top: calc(
+    env(safe-area-inset-top, 0px)
+    + var(--header-gap-top)
+    + var(--header-height)
+    + var(--header-gap-bottom)
+  );
   /* CRITICAL: push content above fixed bottom nav */
   padding-bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px) + 24px);
   display: grid;
@@ -561,7 +587,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 }
 
 /* ── App Header inner layout ── */
-/* (The fixed positioning is on .app-header; .top-chrome kept as alias for backwards compat) */
+/* (.app-header is position:absolute inside .header-layer; .top-chrome kept as alias) */
 .top-chrome, .app-header {
   display: flex;
   flex-direction: column;
@@ -1861,9 +1887,37 @@ body.keyboard-open .auth-shell {
   .draft-actions { grid-template-columns: 1fr 1fr; }
 }
 @media (max-width: 420px) {
-  /* Mobile screens: forms go single column to prevent overflow */
-  .two-cols { grid-template-columns: 1fr; }
-  .med-edit-two-cols { grid-template-columns: 1fr; }
+  /* Keep two-cols side-by-side but compact on mobile to save vertical space and prevent overlap */
+  .two-cols {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
+  }
+  .med-edit-two-cols {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  /* Compact form card layouts on mobile */
+  .form-card { gap: 10px; }
+  .form-card label { gap: 4px; }
+
+  /* Compact input/textarea/select sizing on mobile */
+  input, textarea, select {
+    min-height: 42px;
+    padding: 10px 12px;
+  }
+
+  /* Even more compact padding for two-cols grid fields */
+  .two-cols input, .two-cols select {
+    padding: 10px 8px;
+  }
+
+  /* Optimize padding for date/time controls with built-in browser UI indicators */
+  input[type="date"], input[type="time"], input[type="datetime-local"] {
+    padding-right: 4px;
+    padding-left: 8px;
+  }
+
   .auth-card, .onboarding-card { padding: 18px; border-radius: 20px; }
   .notification-nudge { grid-template-columns: 1fr; }
   .notification-nudge .secondary-button { width: 100%; }
@@ -1874,7 +1928,7 @@ body.keyboard-open .auth-shell {
   .dashboard-widgets .water-card,
   .dashboard-widgets .doctor-notes-card { padding: 10px 8px !important; gap: 8px !important; min-width: 0 !important; }
   .bottom-nav button { font-size: 10px; }
-  .app-header { border-radius: 0 0 20px 20px; }
+  .app-header { border-radius: 20px; }
 }
 
 /* ── Doctor Notes Sheet, Header Button and Entry Card ── */

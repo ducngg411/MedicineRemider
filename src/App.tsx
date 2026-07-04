@@ -1297,24 +1297,26 @@ function TopChrome({
   const greetingName = displayName?.trim();
 
   return (
-    <header className="app-header">
-      <div className="header-top-row">
-        <p className="eyebrow">{greetingName ? `Ê, ${greetingName}!` : 'Ê!'}</p>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {notesCount > 0 && (
-            <button className="chrome-notes-btn" onClick={onOpenNotes} aria-label="Xem dặn dò bác sĩ">
-              <BookOpen size={16} />
-              <span className="notes-badge">{notesCount}</span>
-            </button>
-          )}
-          <div className="status-pill">
-            {isSyncing ? <Loader2 size={15} className="spin" /> : <ShieldCheck size={15} />}
-            <span>{sessionEmail ? syncModeLabel(syncMode) : 'cục bộ'}</span>
+    <div className="header-layer">
+      <header className="app-header">
+        <div className="header-top-row">
+          <p className="eyebrow">{greetingName ? `Ê, ${greetingName}!` : 'Ê!'}</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {notesCount > 0 && (
+              <button className="chrome-notes-btn" onClick={onOpenNotes} aria-label="Xem dặn dò bác sĩ">
+                <BookOpen size={16} />
+                <span className="notes-badge">{notesCount}</span>
+              </button>
+            )}
+            <div className="status-pill">
+              {isSyncing ? <Loader2 size={15} className="spin" /> : <ShieldCheck size={15} />}
+              <span>{sessionEmail ? syncModeLabel(syncMode) : 'cục bộ'}</span>
+            </div>
           </div>
         </div>
-      </div>
-      <h1>Uống chưa?</h1>
-    </header>
+        <h1>Uống chưa?</h1>
+      </header>
+    </div>
   );
 }
 
