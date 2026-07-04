@@ -1,0 +1,16 @@
+project_id = "thuoc-nhac"
+
+[functions.extract-prescription]
+verify_jwt = true
+
+[functions.register-push-subscription]
+verify_jwt = true
+
+[functions.send-due-reminders]
+verify_jwt = false
+
+[functions.send-test-notification]
+verify_jwt = false
+
+[functions.cleanup-temp-images]
+verify_jwt = false
