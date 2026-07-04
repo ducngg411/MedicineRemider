@@ -1,5 +1,5 @@
-const CACHE_NAME = 'thuoc-nhac-shell-v3';
-const APP_SHELL = ['/', '/manifest.webmanifest', '/icons/icon.svg'];
+const CACHE_NAME = 'thuoc-nhac-shell-v4';
+const APP_SHELL = ['/manifest.webmanifest', '/icons/icon.svg', '/health.json'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -19,12 +19,12 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
 
-  event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request).catch(() => caches.match('/'));
-    }),
-  );
+  if (event.request.mode === 'navigate') {
+    event.respondWith(fetch(event.request).catch(() => caches.match('/')));
+    return;
+  }
+
+  event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
 });
 
 self.addEventListener('push', (event) => {

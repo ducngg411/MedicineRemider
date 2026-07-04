@@ -289,9 +289,11 @@ export function TodayView({
               )}
             </div>
 
-            <div className="hero-right-col">
-              <ProgressRing done={summary.taken} total={summary.total} size={allDone ? 64 : 76} />
-            </div>
+            {summary.total > 0 && (
+              <div className="hero-right-col">
+                <ProgressRing done={summary.taken} total={summary.total} size={allDone ? 64 : 76} />
+              </div>
+            )}
           </div>
 
 

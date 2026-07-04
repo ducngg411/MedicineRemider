@@ -89,7 +89,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
   min-height: 100vh;
   min-height: 100dvh;
   margin: 0 auto;
-  padding: max(20px, env(safe-area-inset-top)) 16px calc(94px + env(safe-area-inset-bottom));
+  /* 120px = nav height (~62px) + bottom offset (14px) + safe buffer (44px) */
+  padding: max(20px, env(safe-area-inset-top)) 16px calc(120px + env(safe-area-inset-bottom));
 }
 
 .auth-shell {
@@ -518,10 +519,14 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 
 /* ── Top Chrome ── */
 .top-chrome {
-  position: sticky; top: 0; z-index: 20;
+  position: sticky;
+  /* Stick BELOW the system status bar, not behind the iPhone notch/Dynamic Island */
+  top: env(safe-area-inset-top, 0);
+  z-index: 20;
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
   margin: -4px -4px 20px;
-  padding: 16px 20px 18px;
+  /* Extra top padding so text is never behind the safe area when at rest */
+  padding: max(16px, calc(env(safe-area-inset-top, 0px) + 8px)) 20px 18px;
   background: var(--color-vast-ink);
   border-radius: 0 0 28px 28px;
   box-shadow: var(--shadow-md);
@@ -643,7 +648,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
   font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.09em;
   color: var(--color-fog);
 }
-.hero-empty-sub { margin: 0; font-size: 14px; color: var(--color-fog); }
+.hero-empty-sub { margin: 0; font-size: 13px; line-height: 1.4; color: var(--color-fog); }
 
 .progress-ring { flex-shrink: 0; }
 .progress-ring svg { display: block; }
@@ -1788,21 +1793,24 @@ body.keyboard-open .auth-shell {
   .course-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .draft-actions { grid-template-columns: 1fr 1fr; }
 }
-@media (max-width: 420px) {
+@media (max-width: 360px) {
+  /* Only truly small screens get single-column forms */
   .two-cols, .inline-form { grid-template-columns: 1fr; }
-  .top-chrome { border-radius: 0 0 20px 20px; }
-  .progress-hero { grid-template-columns: 1fr auto; align-items: start; }
-  .progress-hero .add-fab { grid-column: 2; grid-row: 3; justify-self: end; }
   .auth-card, .onboarding-card { padding: 20px; border-radius: 20px; }
   .notification-nudge { grid-template-columns: 1fr; }
   .notification-nudge .secondary-button { width: 100%; }
+  .tracking-form-actions, .compare-grid { grid-template-columns: 1fr; }
+  .tracking-entry-card { grid-template-columns: 74px 1fr; }
+  .tracking-entry-card .icon-button { grid-column: 1 / -1; width: 100%; }
+}
+@media (max-width: 420px) {
+  .top-chrome { border-radius: 0 0 20px 20px; }
+  .progress-hero { grid-template-columns: 1fr auto; align-items: start; }
+  .progress-hero .add-fab { grid-column: 2; grid-row: 3; justify-self: end; }
   .dashboard-widgets { gap: 8px !important; }
   .dashboard-widgets .water-card,
   .dashboard-widgets .doctor-notes-card { padding: 10px 8px !important; gap: 8px !important; min-width: 0 !important; }
   .bottom-nav button { font-size: 10px; }
-  .tracking-form-actions, .compare-grid { grid-template-columns: 1fr; }
-  .tracking-entry-card { grid-template-columns: 74px 1fr; }
-  .tracking-entry-card .icon-button { grid-column: 1 / -1; width: 100%; }
 }
 
 /* ── Doctor Notes Sheet, Header Button and Entry Card ── */
