@@ -956,12 +956,20 @@ function MedicationCard({
 
           <label className="med-edit-label">
             Tên thuốc
-            <input value={editDraft.name} onChange={(e) => setEditDraft({ ...editDraft, name: e.target.value })} />
+            <input
+              value={editDraft.name}
+              placeholder="VD: Dokreal 25mg"
+              onChange={(e) => setEditDraft({ ...editDraft, name: e.target.value })}
+            />
           </label>
 
           <label className="med-edit-label">
             Cách dùng
-            <textarea value={editDraft.instructions} onChange={(e) => setEditDraft({ ...editDraft, instructions: e.target.value })} />
+            <textarea
+              value={editDraft.instructions}
+              placeholder="VD: Uống 1 viên sau ăn tối"
+              onChange={(e) => setEditDraft({ ...editDraft, instructions: e.target.value })}
+            />
           </label>
 
           <div className="med-edit-two-cols">
@@ -976,7 +984,11 @@ function MedicationCard({
             </label>
             <label className="med-edit-label">
               Dạng thuốc
-              <input value={editDraft.form ?? ''} onChange={(e) => setEditDraft({ ...editDraft, form: e.target.value })} />
+              <input
+                value={editDraft.form ?? ''}
+                placeholder="VD: viên, lọ, tuýp"
+                onChange={(e) => setEditDraft({ ...editDraft, form: e.target.value })}
+              />
             </label>
           </div>
 
@@ -997,6 +1009,7 @@ function MedicationCard({
               <input
                 type="number" min="0"
                 value={editDraft.quantity ?? ''}
+                placeholder="VD: 30"
                 onChange={(e) => {
                   const q = Number(e.target.value) || undefined;
                   setEditDraft({ ...editDraft, quantity: q });
@@ -1008,6 +1021,7 @@ function MedicationCard({
               <input
                 type="number" min="0"
                 value={editDraft.remaining ?? ''}
+                placeholder="VD: 30"
                 onChange={(e) => setEditDraft({ ...editDraft, remaining: Number(e.target.value) || undefined })}
               />
             </label>
@@ -1015,7 +1029,11 @@ function MedicationCard({
 
           <label className="med-edit-label">
             Ghi chú bác sĩ
-            <textarea value={editDraft.doctorNotes ?? ''} onChange={(e) => setEditDraft({ ...editDraft, doctorNotes: e.target.value || undefined })} />
+            <textarea
+              value={editDraft.doctorNotes ?? ''}
+              placeholder="VD: Tránh nắng, tái khám sau 1 tháng"
+              onChange={(e) => setEditDraft({ ...editDraft, doctorNotes: e.target.value || undefined })}
+            />
           </label>
 
           <div className="med-edit-actions">
@@ -1042,6 +1060,27 @@ export function DoctorNotesSheet({
   notes: DoctorNote[];
 }) {
   const [activeCategory, setActiveCategory] = useState<'all' | 'warning' | 'care' | 'recheck' | 'other'>('all');
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const html = document.documentElement;
+    const body = document.body;
+    const previousHtmlOverflow = html.style.overflow;
+    const previousBodyOverflow = body.style.overflow;
+
+    html.classList.add('modal-open');
+    body.classList.add('modal-open');
+    html.style.overflow = 'hidden';
+    body.style.overflow = 'hidden';
+
+    return () => {
+      html.classList.remove('modal-open');
+      body.classList.remove('modal-open');
+      html.style.overflow = previousHtmlOverflow;
+      body.style.overflow = previousBodyOverflow;
+    };
+  }, [isOpen]);
 
   if (!isOpen) return null;
 

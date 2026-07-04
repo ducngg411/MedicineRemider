@@ -116,6 +116,7 @@ export function App() {
   const [extractStep, setExtractStep] = useState(0); // 0=idle 1=reading 2=analysing 3=building
   const [notice, setNotice] = useState<string | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mainRef = useRef<HTMLElement | null>(null);
   const [authEmail, setAuthEmail] = useState('');
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
   const [authChecked, setAuthChecked] = useState(!supabase);
@@ -140,6 +141,21 @@ export function App() {
   );
 
   const doses = useMemo(() => buildDoseInstances(activeMedications, data.doseEvents), [activeMedications, data.doseEvents]);
+
+  useEffect(() => {
+    if ('scrollRestoration' in window.history) {
+      window.history.scrollRestoration = 'manual';
+    }
+
+    const resetScroll = () => {
+      document.body.classList.remove('keyboard-open');
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      mainRef.current?.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    };
+
+    const frame = window.requestAnimationFrame(resetScroll);
+    return () => window.cancelAnimationFrame(frame);
+  }, [view]);
 
   const streak = useMemo(() => {
     const labels = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
@@ -847,7 +863,7 @@ export function App() {
         notesCount={activeDoctorNotes.length}
       />
 
-      <main className="app-main">
+      <main className="app-main" ref={mainRef}>
         {notice && (
           <div className="notice" role="status">
             <span>{notice}</span>
@@ -1439,7 +1455,6 @@ function AddView({
               <input
                 type="file"
                 accept="image/*"
-                capture="environment"
                 onChange={(event) => setSelectedFile(event.target.files?.[0])}
               />
             </label>
@@ -1500,6 +1515,7 @@ function AddView({
               type="number"
               min="1"
               value={input.durationDays ?? ''}
+              placeholder="VD: 30"
               onChange={(event) => onInputChange({ ...input, durationDays: Number(event.target.value) || undefined })}
             />
           </label>
@@ -1522,6 +1538,7 @@ function AddView({
               type="number"
               min="0"
               value={input.quantity ?? ''}
+              placeholder="VD: 30"
               onChange={(event) => {
                 const quantity = Number(event.target.value) || undefined;
                 onInputChange({ ...input, quantity, remaining: quantity });
@@ -1530,7 +1547,11 @@ function AddView({
           </label>
           <label>
             Dạng thuốc
-            <input value={input.form ?? ''} onChange={(event) => onInputChange({ ...input, form: event.target.value })} />
+            <input
+              value={input.form ?? ''}
+              placeholder="VD: viên, lọ, tuýp"
+              onChange={(event) => onInputChange({ ...input, form: event.target.value })}
+            />
           </label>
         </div>
 
@@ -1633,7 +1654,11 @@ function DraftReview({
 
               <label>
                 Cách dùng
-                <textarea value={medicine.instructions} onChange={(event) => updateMedicine(index, { instructions: event.target.value })} />
+                <textarea
+                  value={medicine.instructions}
+                  placeholder="VD: Uống 1 viên sau ăn tối"
+                  onChange={(event) => updateMedicine(index, { instructions: event.target.value })}
+                />
               </label>
 
               <div className="two-cols">
@@ -1651,6 +1676,7 @@ function DraftReview({
                     type="number"
                     min="0"
                     value={medicine.quantity ?? ''}
+                    placeholder="VD: 30"
                     onChange={(event) => updateMedicine(index, { quantity: Number(event.target.value) || undefined })}
                   />
                 </label>
@@ -1676,6 +1702,7 @@ function DraftReview({
                     type="number"
                     min="1"
                     value={medicine.durationDays ?? ''}
+                    placeholder="VD: 30"
                     onChange={(event) => updateMedicine(index, { durationDays: Number(event.target.value) || undefined })}
                   />
                 </label>
@@ -1689,7 +1716,11 @@ function DraftReview({
             <strong>Dặn dò bác sĩ</strong>
             {draft.doctorNotes.map((note, index) => (
               <label key={`${note}-${index}`} className="draft-note-edit">
-                <textarea value={note} onChange={(event) => updateDoctorNote(index, event.target.value)} />
+                <textarea
+                  value={note}
+                  placeholder="VD: Tránh nắng, uống nhiều nước, tái khám sau 1 tháng"
+                  onChange={(event) => updateDoctorNote(index, event.target.value)}
+                />
                 <button className="secondary-button danger" type="button" onClick={() => removeDoctorNote(index)}>
                   <X size={14} />
                   Xóa lưu ý
@@ -1752,6 +1783,7 @@ function WaterConfigFields({
             max="3500"
             step="50"
             value={config.dailyGoalMl}
+            placeholder="VD: 2000"
             onChange={(event) => onChange({ dailyGoalMl: Number(event.target.value) || 2000 })}
           />
         </label>
@@ -1760,11 +1792,11 @@ function WaterConfigFields({
       <div className="two-cols">
         <label>
           Giờ bắt đầu
-          <input type="time" value={config.startTime} onChange={(event) => onChange({ startTime: event.target.value })} />
+          <input type="time" value={config.startTime} aria-label="Giờ bắt đầu" onChange={(event) => onChange({ startTime: event.target.value })} />
         </label>
         <label>
           Giờ kết thúc
-          <input type="time" value={config.endTime} onChange={(event) => onChange({ endTime: event.target.value })} />
+          <input type="time" value={config.endTime} aria-label="Giờ kết thúc" onChange={(event) => onChange({ endTime: event.target.value })} />
         </label>
       </div>
 
@@ -1776,6 +1808,7 @@ function WaterConfigFields({
           max="360"
           step="30"
           value={config.intervalMinutes}
+          placeholder="VD: 120"
           onChange={(event) => onChange({ intervalMinutes: Number(event.target.value) || 120 })}
         />
       </label>
@@ -1948,6 +1981,7 @@ function TrackingView({
 }) {
   const [filterArea, setFilterArea] = useState<TrackingBodyArea | 'all'>('all');
   const [showComposer, setShowComposer] = useState(false);
+  const [comparisonOpen, setComparisonOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   
   const [rawFile, setRawFile] = useState<File | null>(null);
@@ -1986,12 +2020,25 @@ function TrackingView({
 
   const entriesByArea = useMemo(() => {
     const groups = new Map<TrackingBodyArea, HealthPhotoEntry[]>();
-    visibleEntries.forEach((entry) => {
+    entries.forEach((entry) => {
       groups.set(entry.bodyArea, [...(groups.get(entry.bodyArea) ?? []), entry]);
     });
-    // Sort body areas consistently
-    return Array.from(groups.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-  }, [visibleEntries]);
+    return Array.from(groups.entries())
+      .map(([areaId, areaEntries]) => [
+        areaId,
+        [...areaEntries].sort((a, b) => new Date(a.takenAt).getTime() - new Date(b.takenAt).getTime()),
+      ] as const)
+      .sort(([, aEntries], [, bEntries]) => {
+        const aLatest = new Date(aEntries[aEntries.length - 1]?.takenAt ?? 0).getTime();
+        const bLatest = new Date(bEntries[bEntries.length - 1]?.takenAt ?? 0).getTime();
+        return bLatest - aLatest;
+      });
+  }, [entries]);
+
+  const progressGroups = useMemo(
+    () => (filterArea === 'all' ? [] : entriesByArea.filter(([areaId]) => areaId === filterArea)),
+    [entriesByArea, filterArea],
+  );
 
   useEffect(() => {
     const ids = new Set(sortedVisibleEntries.map((entry) => entry.id));
@@ -2148,22 +2195,40 @@ function TrackingView({
             <p>Ảnh mặc định được lưu trên thiết bị này và không tự động tải lên cloud.</p>
           </div>
 
-          <button className="primary-button wide tracking-add-cta" onClick={() => setShowComposer(true)}>
-            <Camera size={18} />
-            Thêm ảnh kiểm tra
-          </button>
+          <div className="tracking-action-row">
+            <button
+              className="primary-button tracking-add-cta"
+              onClick={() => {
+                setComparisonOpen(false);
+                setShowComposer(true);
+              }}
+            >
+              <Camera size={18} />
+              Thêm ảnh
+            </button>
+            <button
+              type="button"
+              className={`secondary-button tracking-compare-trigger${comparisonOpen ? ' active' : ''}`}
+              aria-expanded={comparisonOpen}
+              onClick={() => setComparisonOpen((current) => !current)}
+            >
+              <ArrowLeftRight size={18} />
+              {comparisonOpen ? 'Ẩn so sánh' : 'So sánh'}
+              <span>{visibleEntries.length}</span>
+            </button>
+          </div>
 
           <div className="area-filter-row">
             <button className={filterArea === 'all' ? 'active' : ''} onClick={() => setFilterArea('all')}>
               Tất cả
             </button>
-            {BODY_AREAS.map((area) => (
+            {entriesByArea.map(([areaId, areaEntries]) => (
               <button
-                key={area.id}
-                className={filterArea === area.id ? 'active' : ''}
-                onClick={() => setFilterArea(area.id)}
+                key={areaId}
+                className={filterArea === areaId ? 'active' : ''}
+                onClick={() => setFilterArea(areaId)}
               >
-                {area.label}
+                {trackingAreaLabel(areaId)} ({areaEntries.length})
               </button>
             ))}
           </div>
@@ -2217,7 +2282,6 @@ function TrackingView({
                 <input
                   type="file"
                   accept="image/*"
-                  capture="environment"
                   onChange={(event) => setRawFile(event.target.files?.[0] ?? null)}
                 />
               )}
@@ -2264,7 +2328,12 @@ function TrackingView({
 
           <label>
             Ngày ghi nhận
-            <input type="datetime-local" value={takenAt} onChange={(event) => setTakenAt(event.target.value)} />
+            <input
+              type="datetime-local"
+              value={takenAt}
+              aria-label="Ngày giờ ghi nhận"
+              onChange={(event) => setTakenAt(event.target.value)}
+            />
           </label>
 
           <div className="tracking-form-actions">
@@ -2293,7 +2362,13 @@ function TrackingView({
           <Camera size={34} />
           <h3>Chưa có ảnh theo dõi</h3>
           <p>Chụp lại tình trạng để dựng bản đồ hành trình phục hồi của bạn.</p>
-          <button className="primary-button" onClick={() => setShowComposer(true)}>
+          <button
+            className="primary-button"
+            onClick={() => {
+              setComparisonOpen(false);
+              setShowComposer(true);
+            }}
+          >
             Thêm ảnh đầu tiên
           </button>
         </div>
@@ -2302,13 +2377,24 @@ function TrackingView({
       {entries.length > 0 && (
         <>
 
+          {comparisonOpen && !showComposer && (
           <div className="comparison-center">
             <div className="comparison-center-header">
               <div className="section-heading tight">
                 <span className="badge forest">So sánh</span>
                 <h3>So sánh tình trạng</h3>
               </div>
-              <span className="comparison-count">{visibleEntries.length} ảnh</span>
+              <div className="comparison-header-actions">
+                <span className="comparison-count">{visibleEntries.length} ảnh</span>
+                <button
+                  type="button"
+                  className="icon-button small comparison-close"
+                  aria-label="Đóng so sánh"
+                  onClick={() => setComparisonOpen(false)}
+                >
+                  <X size={15} />
+                </button>
+              </div>
             </div>
 
             {visibleEntries.length < 2 ? (
@@ -2316,7 +2402,13 @@ function TrackingView({
                 <Camera size={22} />
                 <strong>Cần ít nhất 2 ảnh để so sánh</strong>
                 <p>Hãy chụp thêm sau vài ngày để nhìn rõ tiến triển.</p>
-                <button className="primary-button" onClick={() => setShowComposer(true)}>
+                <button
+                  className="primary-button"
+                  onClick={() => {
+                    setComparisonOpen(false);
+                    setShowComposer(true);
+                  }}
+                >
                   <Plus size={18} />
                   Thêm ảnh mới
                 </button>
@@ -2408,9 +2500,39 @@ function TrackingView({
               </>
             )}
           </div>
+          )}
 
+          {filterArea === 'all' ? (
+            <div className="area-overview-strip" aria-label="Chọn vùng theo dõi">
+              {entriesByArea.map(([areaId, areaEntries]) => {
+                const firstEntry = areaEntries[0];
+                const latestEntry = areaEntries[areaEntries.length - 1];
+
+                return (
+                  <button
+                    type="button"
+                    className="area-overview-card"
+                    key={areaId}
+                    onClick={() => setFilterArea(areaId)}
+                  >
+                    <span className="area-overview-thumb">
+                      <TrackingImage imageKey={latestEntry.imageLocalKey} alt={`Ảnh mới nhất ${trackingAreaLabel(areaId)}`} />
+                    </span>
+                    <span className="area-overview-copy">
+                      <strong>{trackingAreaLabel(areaId)}</strong>
+                      <small>{areaEntries.length} ảnh</small>
+                      <em>
+                        {formatShortDate(firstEntry.takenAt)} → {formatShortDate(latestEntry.takenAt)}
+                      </em>
+                    </span>
+                    <ChevronRight size={16} />
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
           <div className="area-paths-list">
-            {entriesByArea.map(([areaId, areaEntries]) => {
+            {progressGroups.map(([areaId, areaEntries]) => {
               const sortedAreaEntries = [...areaEntries].sort(
                 (a, b) => new Date(a.takenAt).getTime() - new Date(b.takenAt).getTime()
               );
@@ -2489,6 +2611,7 @@ function TrackingView({
               );
             })}
           </div>
+          )}
         </>
       )}
 
