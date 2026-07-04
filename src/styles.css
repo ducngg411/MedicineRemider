@@ -1911,7 +1911,7 @@ body.keyboard-open .auth-shell {
   /* Tight padding and font size for two-cols grid fields to prevent horizontal overlap */
   .two-cols input, .two-cols select {
     padding: 10px 4px;
-    font-size: 14px;
+    font-size: 16px; /* 16px prevents iOS Safari from zooming on focus */
     text-align: center;
   }
 
