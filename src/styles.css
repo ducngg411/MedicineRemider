@@ -38,17 +38,37 @@
 
 * { box-sizing: border-box; }
 
+html {
+  min-width: 320px;
+  min-height: 100%;
+  background: #eceae0;
+  scroll-padding-bottom: calc(110px + env(safe-area-inset-bottom));
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  min-height: 100dvh;
   background: #eceae0;
+  overscroll-behavior-y: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
-button, input, textarea { font: inherit; }
+#root {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+button, input, textarea, select { font: inherit; }
 
 button {
   cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
   transition: transform var(--duration-fast) var(--ease-out-swift),
               border-color var(--duration-base) var(--ease-out-swift),
               background var(--duration-base) var(--ease-out-swift),
@@ -67,14 +87,17 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 .app-shell {
   max-width: 720px;
   min-height: 100vh;
+  min-height: 100dvh;
   margin: 0 auto;
   padding: max(20px, env(safe-area-inset-top)) 16px calc(94px + env(safe-area-inset-bottom));
 }
 
 .auth-shell {
   min-height: 100vh;
+  min-height: 100dvh;
   display: grid;
-  place-items: center;
+  align-items: center;
+  justify-items: center;
   padding: max(24px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
   background: var(--color-lumen-cream);
 }
@@ -132,6 +155,23 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
   gap: 7px;
   font-size: 14px;
   font-weight: 700;
+}
+
+.google-auth-button {
+  justify-content: center;
+  background: var(--color-pure-white) !important;
+  color: var(--color-vast-ink) !important;
+}
+
+.google-auth-button span {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--surface-card-border);
+  font-size: 13px;
+  font-weight: 900;
 }
 
 .auth-mail-state,
@@ -1511,13 +1551,16 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 /* ── Forms ── */
 .form-card { display: grid; gap: 14px; }
 .form-card label { display: grid; gap: 7px; color: var(--color-charcoal); font-size: 14px; font-weight: 600; }
-input, textarea {
+input, textarea, select {
   width: 100%; min-height: 48px;
   border: 2px solid var(--color-vast-ink); border-radius: 12px; padding: 12px 14px;
   color: var(--color-vast-ink); background: var(--color-lumen-cream);
+  font-size: 16px;
+  line-height: 1.35;
   transition: border-color var(--duration-base) ease;
+  touch-action: manipulation;
 }
-input:focus, textarea:focus {
+input:focus, textarea:focus, select:focus {
   outline: none; border-color: var(--color-vast-ink);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-lavender-whisper) 60%, transparent);
 }
@@ -1686,6 +1729,7 @@ textarea { min-height: 96px; resize: vertical; }
   border-radius: 20px;
   background: var(--color-vast-ink);
   box-shadow: var(--shadow-lg);
+  transform: translateZ(0);
 }
 .bottom-nav button {
   display: grid; place-items: center; gap: 3px;
@@ -1702,6 +1746,20 @@ textarea { min-height: 96px; resize: vertical; }
 }
 .bottom-nav button.active * {
   color: var(--color-vast-ink) !important;
+}
+
+body.keyboard-open .bottom-nav {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(calc(100% + 24px)) translateZ(0);
+}
+
+body.keyboard-open .app-shell {
+  padding-bottom: max(24px, env(safe-area-inset-bottom));
+}
+
+body.keyboard-open .auth-shell {
+  align-items: start;
 }
 
 /* ── Utility ── */
@@ -3054,7 +3112,7 @@ textarea { min-height: 96px; resize: vertical; }
   color: var(--color-vast-ink);
   padding: 9px 10px;
   font: inherit;
-  font-size: 12.5px;
+  font-size: 16px;
 }
 .comparison-unavailable {
   margin: -2px 0 0;
@@ -3285,7 +3343,7 @@ textarea { min-height: 96px; resize: vertical; }
   padding: 10px 12px;
   color: var(--color-vast-ink);
   font: inherit;
-  font-size: 13px;
+  font-size: 16px;
   resize: vertical;
 }
 
@@ -3370,4 +3428,3 @@ textarea { min-height: 96px; resize: vertical; }
     opacity: 1;
   }
 }
-

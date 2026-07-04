@@ -120,6 +120,8 @@ export function App() {
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
   const [authChecked, setAuthChecked] = useState(!supabase);
   const [magicLinkSent, setMagicLinkSent] = useState(false);
+  const [magicLinkCooldownUntil, setMagicLinkCooldownUntil] = useState(0);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [householdId, setHouseholdId] = useState<string | null>(null);
   const [syncMode, setSyncMode] = useState<SyncMode>('local');
   const [isSyncing, setIsSyncing] = useState(false);
@@ -207,6 +209,45 @@ export function App() {
     noticeTimer.current = setTimeout(() => setNotice(null), 4000);
     return () => { if (noticeTimer.current) clearTimeout(noticeTimer.current); };
   }, [notice]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const viewport = window.visualViewport;
+
+    function updateKeyboardState() {
+      const activeElement = document.activeElement;
+      const isTextField = activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement || activeElement instanceof HTMLSelectElement;
+      const viewportIsShort = viewport ? viewport.height < window.innerHeight - 120 : false;
+      document.body.classList.toggle('keyboard-open', Boolean(isTextField && viewportIsShort));
+    }
+
+    function keepFocusedFieldVisible() {
+      updateKeyboardState();
+      const activeElement = document.activeElement;
+      if (!(activeElement instanceof HTMLElement)) return;
+      if (!activeElement.matches('input, textarea, select')) return;
+      window.setTimeout(() => {
+        activeElement.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
+      }, 80);
+    }
+
+    window.addEventListener('focusin', keepFocusedFieldVisible);
+    window.addEventListener('focusout', updateKeyboardState);
+    viewport?.addEventListener('resize', updateKeyboardState);
+    viewport?.addEventListener('scroll', updateKeyboardState);
+
+    return () => {
+      document.body.classList.remove('keyboard-open');
+      window.removeEventListener('focusin', keepFocusedFieldVisible);
+      window.removeEventListener('focusout', updateKeyboardState);
+      viewport?.removeEventListener('resize', updateKeyboardState);
+      viewport?.removeEventListener('scroll', updateKeyboardState);
+    };
+  }, []);
 
   useEffect(() => {
     const displayName = data.userSettings.displayName;
@@ -297,13 +338,41 @@ export function App() {
 
   async function sendMagicLink() {
     if (!supabase || !authEmail) return;
+    if (Date.now() < magicLinkCooldownUntil) {
+      setNotice('Đợi một chút rồi gửi lại link đăng nhập nhé.');
+      return;
+    }
+
+    setMagicLinkCooldownUntil(Date.now() + 60_000);
     const { error } = await supabase.auth.signInWithOtp({
       email: authEmail,
       options: { emailRedirectTo: window.location.origin },
     });
 
     if (!error) setMagicLinkSent(true);
-    setNotice(error ? error.message : 'Đã gửi link đăng nhập vào email.');
+    if (error) {
+      const message = getAuthNotice(error);
+      setNotice(message);
+      if (!isAuthRateLimitError(error)) setMagicLinkCooldownUntil(0);
+      return;
+    }
+
+    setNotice('Đã gửi link đăng nhập vào email.');
+  }
+
+  async function signInWithGoogle() {
+    if (!supabase) return;
+
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.origin,
+      },
+    });
+
+    if (error) {
+      setNotice(error.message);
+    }
   }
 
   async function updateUserSettings(nextSettings: UserSettings) {
@@ -747,9 +816,11 @@ export function App() {
       <AuthGate
         authEmail={authEmail}
         magicLinkSent={magicLinkSent}
+        cooldownSeconds={Math.max(0, Math.ceil((magicLinkCooldownUntil - nowMs) / 1000))}
         canUseAuth={Boolean(supabase)}
         onAuthEmail={setAuthEmail}
         onSendMagicLink={sendMagicLink}
+        onGoogleSignIn={signInWithGoogle}
       />
     );
   }
@@ -884,16 +955,22 @@ export function App() {
 function AuthGate({
   authEmail,
   magicLinkSent,
+  cooldownSeconds,
   canUseAuth,
   onAuthEmail,
   onSendMagicLink,
+  onGoogleSignIn,
 }: {
   authEmail: string;
   magicLinkSent: boolean;
+  cooldownSeconds: number;
   canUseAuth: boolean;
   onAuthEmail: (email: string) => void;
   onSendMagicLink: () => void;
+  onGoogleSignIn: () => void;
 }) {
+  const isCoolingDown = cooldownSeconds > 0;
+
   return (
     <div className="auth-shell">
       <form
@@ -937,9 +1014,14 @@ function AuthGate({
           <p className="muted">Chưa cấu hình Supabase trong .env.local nên chưa gửi magic link được.</p>
         )}
 
-        <button className="primary-button wide" type="submit" disabled={!canUseAuth || !authEmail || magicLinkSent}>
+        <button className="secondary-button wide google-auth-button" type="button" disabled={!canUseAuth} onClick={onGoogleSignIn}>
+          <span aria-hidden="true">G</span>
+          Tiếp tục với Google
+        </button>
+
+        <button className="primary-button wide" type="submit" disabled={!canUseAuth || !authEmail || magicLinkSent || isCoolingDown}>
           <LogIn size={18} />
-          Tiếp tục
+          {isCoolingDown ? `Gửi lại sau ${cooldownSeconds}s` : 'Tiếp tục'}
         </button>
       </form>
     </div>
@@ -3260,6 +3342,20 @@ async function getReadableError(error: unknown) {
 
   if (error instanceof Error) return error.message;
   return 'Lỗi không xác định';
+}
+
+function getAuthNotice(error: unknown) {
+  if (isAuthRateLimitError(error)) {
+    return 'Supabase đang chặn gửi email vì gửi quá nhiều lần. Đợi ít nhất 60 giây rồi thử lại; nếu vẫn 429 thì vào Supabase Auth > Rate Limits hoặc cấu hình SMTP riêng.';
+  }
+
+  return error instanceof Error ? error.message : 'Không gửi được link đăng nhập.';
+}
+
+function isAuthRateLimitError(error: unknown) {
+  const candidate = error as { status?: number; code?: string; message?: string };
+  const message = candidate.message?.toLowerCase() ?? '';
+  return candidate.status === 429 || candidate.code === 'over_email_send_rate_limit' || message.includes('rate limit');
 }
 
 function syncModeLabel(syncMode: SyncMode) {
