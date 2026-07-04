@@ -89,44 +89,48 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 
 /* ── App Shell: fixed header + scrollable content + fixed nav ── */
 .app-shell {
-  position: relative;
-  max-width: 720px;
   min-height: 100dvh;
-  margin: 0 auto;
   background: #eceae0;
 }
 
-/* ── App Header (fixed) ── */
+/* ── App Header (fixed, full-width wrapper) ── */
 .app-header {
   position: fixed;
-  top: env(safe-area-inset-top, 0);
-  left: var(--page-x);
-  right: var(--page-x);
-  /* constrain to same max-width as shell */
-  max-width: calc(720px - var(--page-x) * 2);
-  margin: 0 auto;
+  top: env(safe-area-inset-top, 0px);
+  left: 0;
+  right: 0;
   height: var(--header-height);
   z-index: 50;
+  /* Use padding to create page margins */
+  padding: 20px var(--page-x) 18px;
   overflow: hidden;
 
   background: var(--color-vast-ink);
   color: var(--color-lumen-cream);
   border-radius: 0 0 28px 28px;
-  padding: 20px 20px 18px;
   box-shadow: var(--shadow-md);
 
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+
+  /* Constrain content width on large screens */
+  max-width: 720px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 /* ── App Main (scrollable content area) ── */
 .app-main {
+  max-width: 720px;
+  margin-left: auto;
+  margin-right: auto;
+  width: 100%;
   padding-left: var(--page-x);
   padding-right: var(--page-x);
-  /* Push content below fixed header + safe area + gap */
+  /* CRITICAL: push content below fixed header */
   padding-top: calc(var(--header-height) + env(safe-area-inset-top, 0px) + 24px);
-  /* Push content above fixed bottom nav + safe area + gap */
+  /* CRITICAL: push content above fixed bottom nav */
   padding-bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px) + 24px);
   display: grid;
   gap: 18px;
@@ -1776,26 +1780,32 @@ textarea { min-height: 96px; resize: vertical; }
 .empty-state p { margin: 0; }
 
 /* ── Bottom Nav (fixed) ── */
+/* .bottom-nav = invisible fixed wrapper, full-width */
 .bottom-nav {
   position: fixed;
-  left: var(--page-x);
-  right: var(--page-x);
-  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  left: 0;
+  right: 0;
+  bottom: env(safe-area-inset-bottom, 0px);
   z-index: 60;
-  height: var(--bottom-nav-height);
-  max-width: calc(720px - var(--page-x) * 2);
-  margin: 0 auto;
-
+  padding: 0 var(--page-x) 12px;
+  max-width: 720px;
+  margin-left: auto;
+  margin-right: auto;
+  pointer-events: none; /* let clicks through to content */
+  transition: opacity var(--duration-base) ease, transform var(--duration-base) var(--ease-out-swift);
+}
+/* .nav-pill = the visible dark pill */
+.nav-pill {
+  pointer-events: all;
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: 4px;
   padding: 6px;
-
+  height: var(--bottom-nav-height);
   border-radius: 28px;
   background: var(--color-vast-ink);
   box-shadow: var(--shadow-lg);
   transform: translateZ(0);
-  transition: opacity var(--duration-base) ease, transform var(--duration-base) var(--ease-out-swift);
 }
 .bottom-nav button {
   display: grid; place-items: center; gap: 3px;
@@ -1818,7 +1828,7 @@ textarea { min-height: 96px; resize: vertical; }
 body.keyboard-open .bottom-nav {
   opacity: 0;
   pointer-events: none;
-  transform: translateY(calc(100% + 24px)) translateZ(0);
+  transform: translateY(calc(100% + 24px));
 }
 body.keyboard-open .auth-shell {
   align-items: start;
@@ -1845,7 +1855,6 @@ body.keyboard-open .auth-shell {
 /* ── Responsive ── */
 @media (min-width: 680px) {
   :root { --page-x: 24px; }
-  .app-header, .bottom-nav { left: 24px; right: 24px; }
   .dose-grid { grid-template-columns: 1fr 1fr; }
   .cabinet-grid { grid-template-columns: 1fr 1fr; }
   .course-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); }

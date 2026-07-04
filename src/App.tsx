@@ -3062,15 +3062,17 @@ function BottomNav({ view, onView }: { view: View; onView: (view: View) => void 
 
   return (
     <nav className="bottom-nav" aria-label="Điều hướng chính">
-      {items.map((item) => {
-        const Icon = item.icon;
-        return (
-          <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => onView(item.id)}>
-            <Icon size={19} />
-            <span>{item.label}</span>
-          </button>
-        );
-      })}
+      <div className="nav-pill">
+        {items.map((item) => {
+          const Icon = item.icon;
+          return (
+            <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => onView(item.id)}>
+              <Icon size={19} />
+              <span>{item.label}</span>
+            </button>
+          );
+        })}
+      </div>
     </nav>
   );
 }
