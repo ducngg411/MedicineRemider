@@ -26,7 +26,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { formatShortDateTime, formatTime } from '../lib/date';
 import type { Appointment, DoctorNote, DoseEvent, DoseInstance, DoseStatus, Medication, TreatmentCourse, DayStreak } from '../lib/types';
-import { summarizeDoses, normalizeTimes } from '../lib/schedule';
+import { summarizeDoses, normalizeDurationDays, normalizeTimes } from '../lib/schedule';
 import { ProgressRing } from './ProgressRing';
 
 /* ───── constants ───── */
@@ -74,7 +74,7 @@ function noteCategoryIcon(cat: DoctorNote['category']) {
 /** Dose is close enough to deserve visual emphasis */
 function isImminent(dose: DoseInstance, now = new Date()) {
   if (dose.status !== 'soon' && dose.status !== 'due' && dose.status !== 'snoozed') return false;
-  const diff = dose.scheduledAt.getTime() - now.getTime();
+  const diff = dose.effectiveAt.getTime() - now.getTime();
   return diff >= -5 * 60 * 1000 && diff <= 60 * 60 * 1000; // -5min to +60min window
 }
 
@@ -97,11 +97,11 @@ function getPeriodKey(date: Date): string {
 function getNextDoseGroup(doses: DoseInstance[], now: Date): DoseInstance[] {
   const pending = doses
     .filter((d) => d.status === 'upcoming' || d.status === 'soon' || d.status === 'due' || d.status === 'snoozed')
-    .sort((a, b) => a.scheduledAt.getTime() - b.scheduledAt.getTime());
+    .sort((a, b) => a.effectiveAt.getTime() - b.effectiveAt.getTime());
   const next = pending[0];
   if (!next) return [];
-  const nextTime = next.scheduledAt.getTime();
-  return pending.filter((dose) => dose.scheduledAt.getTime() === nextTime);
+  const nextTime = next.effectiveAt.getTime();
+  return pending.filter((dose) => dose.effectiveAt.getTime() === nextTime);
 }
 
 function formatCountdown(target: Date, now: Date) {
@@ -165,7 +165,7 @@ export function TodayView({
   displayName?: string;
   notificationBanner?: ReactNode;
   waterCard?: ReactNode;
-  onDoseAction: (dose: DoseInstance, status: DoseStatus) => void;
+  onDoseAction: (dose: DoseInstance, status: DoseStatus, options?: { snoozedUntil?: Date }) => void;
   onAdd: () => void;
   onOpenNotes: () => void;
 }) {
@@ -184,7 +184,7 @@ export function TodayView({
   const firstLateDose = lateDoses[0] ?? null;
   const hasLateDose = lateDoses.length > 0;
   const lateMin = firstLateDose
-    ? Math.round((now.getTime() - firstLateDose.scheduledAt.getTime()) / 60000)
+    ? Math.round((now.getTime() - firstLateDose.effectiveAt.getTime()) / 60000)
     : 0;
 
   // Hero eyebrow — priority: late > next due > missed > done
@@ -207,11 +207,11 @@ export function TodayView({
       ? `${nextDoseGroup[0].medication.name} +${nextDoseGroup.length - 1}`
       : null;
 
-  const diffMin = nextDose ? Math.round((nextDose.scheduledAt.getTime() - now.getTime()) / 60000) : null;
+  const diffMin = nextDose ? Math.round((nextDose.effectiveAt.getTime() - now.getTime()) / 60000) : null;
   let countdownText = '';
   if (diffMin !== null) {
     if (diffMin <= 0) countdownText = 'Đến giờ uống rồi!';
-    else countdownText = formatCountdown(nextDose.scheduledAt, now);
+    else countdownText = formatCountdown(nextDose.effectiveAt, now);
   }
 
   const liveClock = useLiveClock();
@@ -223,6 +223,7 @@ export function TodayView({
   });
 
   const [successDialog, setSuccessDialog] = useState<ActionSuccess | null>(null);
+  const [snoozeDose, setSnoozeDose] = useState<DoseInstance | null>(null);
   const successTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function showDoseSuccess(status: DoseStatus) {
@@ -258,8 +259,8 @@ export function TodayView({
               <p className={`hero-eyebrow${hasLateDose ? ' hero-eyebrow--late' : ''}`}>{heroEyebrow}</p>
               
               {/* Big time */}
-              {hasLateDose && <h2 className="hero-time hero-time--late">{formatTime(firstLateDose!.scheduledAt)}</h2>}
-              {!hasLateDose && nextDose && !allDone && <h2 className="hero-time">{formatTime(nextDose.scheduledAt)}</h2>}
+              {hasLateDose && <h2 className="hero-time hero-time--late">{formatTime(firstLateDose!.effectiveAt)}</h2>}
+              {!hasLateDose && nextDose && !allDone && <h2 className="hero-time">{formatTime(nextDose.effectiveAt)}</h2>}
               {allDone && <h2 className="hero-time hero-time--done">Ngon luôn!</h2>}
               {!hasLateDose && !nextDose && !allDone && summary.missed > 0 && (
                 <h2 className="hero-time hero-time--missed">{summary.missed} bỏ lỡ</h2>
@@ -410,7 +411,7 @@ export function TodayView({
             </div>
             <div className="dose-grid">
               {group.doses.map((dose) => (
-                <DoseCard key={dose.id} dose={dose} now={now} onAction={onDoseAction} onSuccess={showDoseSuccess} />
+                <DoseCard key={dose.id} dose={dose} now={now} onAction={onDoseAction} onSnooze={setSnoozeDose} onSuccess={showDoseSuccess} />
               ))}
             </div>
           </div>
@@ -419,6 +420,17 @@ export function TodayView({
 
 
       {successDialog && <DoseSuccessDialog success={successDialog} onDismiss={() => setSuccessDialog(null)} />}
+      {snoozeDose && (
+        <SnoozeSheet
+          dose={snoozeDose}
+          now={now}
+          onDismiss={() => setSnoozeDose(null)}
+          onConfirm={(snoozedUntil) => {
+            onDoseAction(snoozeDose, 'snoozed', { snoozedUntil });
+            setSnoozeDose(null);
+          }}
+        />
+      )}
     </section>
   );
 }
@@ -429,11 +441,13 @@ function DoseCard({
   dose,
   now,
   onAction,
+  onSnooze,
   onSuccess,
 }: {
   dose: DoseInstance;
   now: Date;
-  onAction: (dose: DoseInstance, status: DoseStatus) => void;
+  onAction: (dose: DoseInstance, status: DoseStatus, options?: { snoozedUntil?: Date }) => void;
+  onSnooze: (dose: DoseInstance) => void;
   onSuccess: (status: DoseStatus) => void;
 }) {
   const isDone = dose.status === 'taken' || dose.status === 'taken_late' || dose.status === 'skipped';
@@ -442,6 +456,7 @@ function DoseCard({
   const isDue = dose.status === 'due';
   const isSoon = dose.status === 'soon';
   const isUpcoming = dose.status === 'upcoming';
+  const isSnoozed = dose.status === 'snoozed';
   const [detailsOpen, setDetailsOpen] = useState(false);
 
   const imminent = isImminent(dose, now);
@@ -460,8 +475,8 @@ function DoseCard({
     onAction(dose, status);
   }
 
-  const lateMin = Math.round((now.getTime() - dose.scheduledAt.getTime()) / 60000);
-  const countdownText = (isUpcoming || isSoon) ? formatCountdown(dose.scheduledAt, now) : '';
+  const lateMin = Math.round((now.getTime() - dose.effectiveAt.getTime()) / 60000);
+  const countdownText = (isUpcoming || isSoon || isSnoozed) ? formatCountdown(dose.effectiveAt, now) : '';
 
   return (
     <article className={[
@@ -469,6 +484,7 @@ function DoseCard({
       isDone ? 'done' : '',
       isMissed ? 'missed-active' : '',
       isLate ? 'late-active' : '',
+      isSnoozed ? 'snoozed-active' : '',
       imminent && !isLate && !isMissed ? 'upcoming-highlight' : '',
     ].filter(Boolean).join(' ')}>
       <div className="dose-time">
@@ -481,14 +497,18 @@ function DoseCard({
           {isTopical && <span className="form-tag">{dose.medication.form}</span>}
           {isLate && <span className="overdue-tag tag--late">Trễ {lateMin}p</span>}
           {isMissed && <span className="overdue-tag tag--missed">Bỏ lỡ</span>}
+          {isSnoozed && <span className="overdue-tag tag--snoozed">Đã hoãn</span>}
         </h3>
-        {!isUpcoming && <p>{dose.medication.instructions}</p>}
+        {!isUpcoming && !isSnoozed && <p>{dose.medication.instructions}</p>}
         
         {isMissed && (
           <p className="missed-warning-text">⚠️ Kiểm tra hướng dẫn dùng thuốc trước khi uống bù</p>
         )}
         {(isUpcoming || isSoon) && (
           <p className="dose-countdown">{countdownText}</p>
+        )}
+        {isSnoozed && (
+          <p className="dose-countdown">Nhắc lại lúc {formatTime(dose.effectiveAt)} · {countdownText}</p>
         )}
 
         <div className="dose-meta">
@@ -506,6 +526,7 @@ function DoseCard({
           <div className="dose-extra-detail">
             <span>{dose.medication.instructions}</span>
             <span>Giờ hẹn: {formatTime(dose.scheduledAt)}</span>
+            {isSnoozed && <span>Đã hoãn tới: {formatTime(dose.effectiveAt)}</span>}
             {dose.medication.doctorNotes && <span>{dose.medication.doctorNotes}</span>}
           </div>
         )}
@@ -517,7 +538,7 @@ function DoseCard({
           {dose.status === 'taken' ? (isTopical ? 'Đã dùng' : 'Đã uống') : dose.status === 'taken_late' ? (isTopical ? 'Đã dùng muộn' : 'Đã uống muộn') : 'Bỏ qua'}
         </div>
       ) : (
-        <div className={`dose-actions${isLate ? ' three-btns' : ''}${isUpcoming ? ' upcoming-actions' : ''}`}>
+        <div className={`dose-actions${isLate || isMissed ? ' three-btns' : ''}${isUpcoming ? ' upcoming-actions' : ''}`}>
           {isUpcoming && (
             <button className="icon-button skip-btn" onClick={() => setDetailsOpen((open) => !open)}>
               Chi tiết
@@ -528,7 +549,7 @@ function DoseCard({
               <button className="icon-button taken-btn early-btn" onClick={() => handleAction('taken')}>
                 <Check size={15} /> Uống sớm
               </button>
-              <button className="icon-button skip-btn snooze-btn" onClick={() => window.alert('App vẫn sẽ nhắc theo giờ đã đặt.')}>
+              <button className="icon-button skip-btn snooze-btn" onClick={() => onSnooze(dose)}>
                 <Clock3 size={15} /> Nhắc tôi
               </button>
             </>
@@ -538,8 +559,8 @@ function DoseCard({
               <button className="icon-button taken-btn" onClick={() => handleAction('taken')}>
                 <Check size={15} /> {isTopical ? 'Đã dùng' : 'Đã uống'}
               </button>
-              <button className="icon-button skip-btn snooze-btn" onClick={() => handleAction('snoozed')}>
-                <Clock3 size={15} /> Nhắc lại 10p
+              <button className="icon-button skip-btn snooze-btn" onClick={() => onSnooze(dose)}>
+                <Clock3 size={15} /> Nhắc lại
               </button>
             </>
           )}
@@ -548,7 +569,7 @@ function DoseCard({
               <button className="icon-button taken-btn late-btn" onClick={() => handleAction('taken_late')}>
                 <Check size={15} /> Uống muộn
               </button>
-              <button className="icon-button skip-btn snooze-btn" onClick={() => handleAction('snoozed')}>
+              <button className="icon-button skip-btn snooze-btn" onClick={() => onSnooze(dose)}>
                 <Clock3 size={15} /> Nhắc lại
               </button>
               <button className="icon-button skip-btn" onClick={() => handleAction('skipped')}>
@@ -561,8 +582,21 @@ function DoseCard({
               <button className="icon-button taken-btn late-btn" onClick={() => handleAction('taken_late')}>
                 <Check size={15} /> Uống bù
               </button>
+              <button className="icon-button skip-btn snooze-btn" onClick={() => onSnooze(dose)}>
+                <Clock3 size={15} /> Nhắc lại
+              </button>
               <button className="icon-button skip-btn" onClick={() => handleAction('skipped')}>
                 <SkipForward size={15} /> Bỏ qua
+              </button>
+            </>
+          )}
+          {isSnoozed && (
+            <>
+              <button className="icon-button taken-btn early-btn" onClick={() => handleAction('taken')}>
+                <Check size={15} /> {isTopical ? 'Đã dùng' : 'Đã uống'}
+              </button>
+              <button className="icon-button skip-btn snooze-btn" onClick={() => onSnooze(dose)}>
+                <Clock3 size={15} /> Đổi giờ
               </button>
             </>
           )}
@@ -570,6 +604,82 @@ function DoseCard({
       )}
 
     </article>
+  );
+}
+
+const QUICK_SNOOZE_MINUTES = [5, 10, 25];
+
+function SnoozeSheet({
+  dose,
+  now,
+  onDismiss,
+  onConfirm,
+}: {
+  dose: DoseInstance;
+  now: Date;
+  onDismiss: () => void;
+  onConfirm: (snoozedUntil: Date) => void;
+}) {
+  const [customMinutes, setCustomMinutes] = useState(15);
+  const baseTime = now.getTime();
+  const customDate = new Date(baseTime + Math.max(1, customMinutes) * 60 * 1000);
+
+  function confirmMinutes(minutes: number) {
+    onConfirm(new Date(baseTime + minutes * 60 * 1000));
+  }
+
+  return (
+    <div className="bottom-sheet-overlay" role="dialog" aria-modal="true" onClick={onDismiss}>
+      <div className="bottom-sheet-content snooze-sheet" onClick={(event) => event.stopPropagation()}>
+        <header className="bottom-sheet-header">
+          <div className="sheet-header-title">
+            <Clock3 size={20} className="sheet-header-icon" />
+            <h3>Nhắc lại</h3>
+          </div>
+          <button className="sheet-close-btn" type="button" onClick={onDismiss} aria-label="Đóng">
+            <X size={18} />
+          </button>
+        </header>
+        <div className="bottom-sheet-body snooze-sheet-body">
+          <div className="snooze-dose-summary">
+            <span>{formatTime(dose.scheduledAt)}</span>
+            <strong>{dose.medication.name}</strong>
+            <p>{dose.medication.instructions}</p>
+          </div>
+
+          <div className="snooze-quick-grid">
+            {QUICK_SNOOZE_MINUTES.map((minutes) => {
+              const target = new Date(baseTime + minutes * 60 * 1000);
+              return (
+                <button type="button" key={minutes} onClick={() => confirmMinutes(minutes)}>
+                  <strong>{minutes} phút</strong>
+                  <span>{formatTime(target)}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <label className="snooze-custom-field">
+            Khác
+            <div>
+              <input
+                type="number"
+                min="1"
+                max="240"
+                value={customMinutes}
+                onChange={(event) => setCustomMinutes(Math.max(1, Number(event.target.value) || 1))}
+              />
+              <span>phút</span>
+            </div>
+          </label>
+
+          <button className="primary-button wide" type="button" onClick={() => onConfirm(customDate)}>
+            <Check size={17} />
+            Nhắc lúc {formatTime(customDate)}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -818,6 +928,8 @@ function MedicationCard({
   const hasStock = typeof medication.quantity === 'number' && typeof medication.remaining === 'number';
   const stockPct = hasStock ? Math.round((medication.remaining! / medication.quantity!) * 100) : null;
   const isLow = hasStock && unitForm && medication.remaining! <= 5;
+  const durationDays = normalizeDurationDays(medication.durationDays);
+  const endDate = medication.endDate && medication.endDate >= medication.startDate ? medication.endDate : undefined;
 
   const history = [...events]
     .sort((a, b) => new Date(b.scheduledAt).getTime() - new Date(a.scheduledAt).getTime())
@@ -825,7 +937,14 @@ function MedicationCard({
 
   function handleSaveEdit() {
     const times = normalizeTimes(editTimeText.split(','));
-    onEdit({ ...editDraft, scheduleTimes: times.length ? times : editDraft.scheduleTimes });
+    const nextDurationDays = normalizeDurationDays(editDraft.durationDays);
+    const nextEndDate = editDraft.endDate && editDraft.endDate >= editDraft.startDate ? editDraft.endDate : undefined;
+    onEdit({
+      ...editDraft,
+      endDate: nextEndDate,
+      durationDays: nextDurationDays,
+      scheduleTimes: times.length ? times : editDraft.scheduleTimes,
+    });
     setEditing(false);
   }
 
@@ -905,8 +1024,8 @@ function MedicationCard({
           <div className="med-detail-section">
             <h4><CalendarDays size={12} /> Thời gian dùng</h4>
             <p>
-              {medication.startDate} → {medication.endDate || 'khi dừng'}
-              {medication.durationDays ? ` · ${medication.durationDays} ngày` : ''}
+              {medication.startDate} → {endDate || 'khi dừng'}
+              {durationDays ? ` · ${durationDays} ngày` : ''}
             </p>
           </div>
 

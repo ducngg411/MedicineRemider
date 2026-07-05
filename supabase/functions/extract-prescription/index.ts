@@ -84,6 +84,8 @@ function buildExtractionPrompt(ocrDraft: NormalizedOcrDraft) {
     'Each medicine row, topical solution, cream, tube, bottle, or gel must become one separate medicines[] item. Do not merge rows. Do not skip topical medicines.',
     'For form, use Vietnamese labels such as "viên", "lọ", "tuýp", "chai", "gói", "ống", "gel", "kem". If instruction says bôi or unit is lọ/tuýp, do not default to viên.',
     'Extract doctorInstructionText into doctorNotes. Split into separate actionable notes. Do not summarize.',
+    'For durationDays, only return a positive integer when the duration is explicitly visible for that same medicine row, such as "Uá»‘ng 10 ngÃ y" or "BÃ´i 30 ngÃ y". If no duration is stated, omit durationDays or return null. Never return 0.',
+    'Do not add generic notes like "Duration not explicitly stated" to needsReview; missing duration is handled by the app.',
     'Return valid JSON with exactly this shape:',
     '{ "patientName": string, "medicines": [{ "name": string, "rawNameLine": string, "genericName": string, "brandName": string, "strength": string, "form": string, "instructions": string, "scheduleTimes": string[], "durationDays": number, "quantity": number, "confidence": number, "needsReview": string[] }], "doctorNotes": string[], "appointments": [{ "title": string, "appointmentAt": string, "notes": string }], "warnings": string[] }',
     'Use HH:mm for scheduleTimes. Guess scheduleTimes only when visible or strongly implied by words like sáng/chiều/tối. Put uncertainty in needsReview or warnings.',
@@ -318,7 +320,7 @@ function normalizeMedicine(medicine: ExtractedMedicine, warnings: string[], ocrR
     brandName,
   });
 
-  const needsReview = [...(ocrRow?.warnings ?? []), ...toStringArray(medicine.needsReview)];
+  const needsReview = [...(ocrRow?.warnings ?? []), ...toStringArray(medicine.needsReview)].filter((note) => !isMissingDurationReview(note));
   if (ocrRawNameLine && originalName && normalizeForCompare(originalName) !== normalizeForCompare(ocrRawNameLine)) {
     needsReview.push('Tên parse ban đầu khác dòng OCR đầy đủ; app đã ưu tiên dòng OCR gốc.');
   }
@@ -337,7 +339,7 @@ function normalizeMedicine(medicine: ExtractedMedicine, warnings: string[], ocrR
     brandName,
     instructions: toCleanString(medicine.instructions) || ocrRow?.instructionText || '',
     scheduleTimes: toStringArray(medicine.scheduleTimes),
-    durationDays: toOptionalNumber(medicine.durationDays),
+    durationDays: toPositiveOptionalNumber(medicine.durationDays),
     quantity: toOptionalNumber(medicine.quantity) ?? ocrRow?.quantity,
     confidence: toOptionalNumber(medicine.confidence) ?? ocrRow?.confidence,
     needsReview: Array.from(new Set(needsReview)),
@@ -451,4 +453,23 @@ function toStringArray(value: unknown) {
 function toOptionalNumber(value: unknown) {
   const numberValue = Number(value);
   return Number.isFinite(numberValue) ? numberValue : undefined;
+}
+
+function toPositiveOptionalNumber(value: unknown) {
+  const numberValue = toOptionalNumber(value);
+  if (numberValue === undefined || numberValue <= 0) return undefined;
+  return Math.floor(numberValue);
+}
+
+function isMissingDurationReview(value: string) {
+  const normalized = value.toLowerCase();
+  return (
+    normalized.includes('duration not explicitly') ||
+    normalized.includes('duration not stated') ||
+    normalized.includes('duration missing') ||
+    normalized.includes('không thấy thời gian dùng') ||
+    normalized.includes('khong thay thoi gian dung') ||
+    normalized.includes('chưa rõ thời gian dùng') ||
+    normalized.includes('chua ro thoi gian dung')
+  );
 }

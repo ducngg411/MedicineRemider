@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { buildDoseInstances, inferStatus, normalizeTimes } from './schedule';
+import { dateFromLocalDateAndTime } from './date';
+import { buildDoseInstances, inferStatus, isMedicationTrackedByActiveCourse, normalizeDurationDays, normalizeTimes, summarizeDoses } from './schedule';
 import type { DoseEvent, Medication } from './types';
 
 const medication: Medication = {
@@ -63,7 +64,97 @@ describe('schedule helpers', () => {
     expect(status).toBe('late');
   });
 
+  it('keeps a dose snoozed until the selected reminder time', () => {
+    const event: DoseEvent = {
+      id: 'event-snooze',
+      medicationId: 'med-1',
+      scheduledAt: new Date(2026, 6, 3, 8).toISOString(),
+      status: 'snoozed',
+      snoozedUntil: new Date(2026, 6, 3, 8, 25).toISOString(),
+    };
+
+    expect(inferStatus(new Date(2026, 6, 3, 8), event, new Date(2026, 6, 3, 8, 10))).toBe('snoozed');
+    expect(inferStatus(new Date(2026, 6, 3, 8), event, new Date(2026, 6, 3, 8, 26))).toBe('due');
+    expect(inferStatus(new Date(2026, 6, 3, 8), event, new Date(2026, 6, 3, 9))).toBe('late');
+  });
+
+  it('sorts snoozed doses by their reminder time and keeps them pending', () => {
+    const event: DoseEvent = {
+      id: 'event-snooze',
+      medicationId: 'med-1',
+      scheduledAt: new Date(2026, 6, 3, 8).toISOString(),
+      status: 'snoozed',
+      snoozedUntil: new Date(2026, 6, 3, 20, 10).toISOString(),
+    };
+    const doses = buildDoseInstances([medication], [event], new Date(2026, 6, 3, 9), new Date(2026, 6, 3, 9));
+
+    expect(doses[1].status).toBe('snoozed');
+    expect(doses[1].effectiveAt.toISOString()).toBe(event.snoozedUntil);
+    expect(summarizeDoses(doses).pending).toBe(2);
+  });
+
   it('normalizes duplicate times', () => {
     expect(normalizeTimes(['08:00', '08:00', '20:30'])).toEqual(['08:00', '20:30']);
+  });
+
+  it('builds today doses for topical medicines', () => {
+    const topical: Medication = {
+      ...medication,
+      id: 'tube-1',
+      name: 'Adalcream plus 15g',
+      form: 'tuýp',
+      startDate: '2026-07-05',
+      endDate: '2026-08-03',
+      scheduleTimes: ['20:55'],
+    };
+
+    const doses = buildDoseInstances(
+      [topical],
+      [],
+      dateFromLocalDateAndTime('2026-07-05', '12:00'),
+      dateFromLocalDateAndTime('2026-07-05', '20:59'),
+    );
+
+    expect(doses).toHaveLength(1);
+    expect(doses[0].medication.name).toBe('Adalcream plus 15g');
+    expect(doses[0].status).toBe('due');
+  });
+
+  it('ignores impossible end dates caused by missing duration', () => {
+    const topical: Medication = {
+      ...medication,
+      id: 'tube-invalid-end',
+      name: 'Adalcream plus 15g',
+      form: 'tuýp',
+      startDate: '2026-07-04',
+      endDate: '2026-07-03',
+      durationDays: 0,
+      scheduleTimes: ['20:55'],
+    };
+
+    const doses = buildDoseInstances(
+      [topical],
+      [],
+      dateFromLocalDateAndTime('2026-07-05', '12:00'),
+      dateFromLocalDateAndTime('2026-07-05', '20:59'),
+    );
+
+    expect(doses).toHaveLength(1);
+  });
+
+  it('normalizes duration days to positive integers only', () => {
+    expect(normalizeDurationDays(undefined)).toBeUndefined();
+    expect(normalizeDurationDays(0)).toBeUndefined();
+    expect(normalizeDurationDays(-1)).toBeUndefined();
+    expect(normalizeDurationDays(10.8)).toBe(10);
+  });
+
+  it('keeps orphan course medications visible in the active schedule', () => {
+    const knownCourseIds = new Set(['course-active', 'course-old']);
+
+    expect(isMedicationTrackedByActiveCourse({ courseId: undefined }, 'course-active', knownCourseIds)).toBe(true);
+    expect(isMedicationTrackedByActiveCourse({ courseId: 'missing-course' }, 'course-active', knownCourseIds)).toBe(true);
+    expect(isMedicationTrackedByActiveCourse({ courseId: 'course-old' }, 'course-active', knownCourseIds)).toBe(false);
+    expect(isMedicationTrackedByActiveCourse({ courseId: 'course-active' }, 'course-active', knownCourseIds)).toBe(true);
   });
 });

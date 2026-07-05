@@ -611,6 +611,14 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
   justify-content: space-between;
   gap: 8px;
 }
+.header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: 0 0 auto;
+  min-width: 0;
+}
 .top-chrome h1, .app-header h1 {
   margin: 0;
   font-family: var(--font-eb-garamond);
@@ -964,6 +972,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
   background: var(--color-ember-light);
   border-color: var(--color-ember-glow);
 }
+.dose-card.snoozed-active {
+  background: color-mix(in srgb, var(--color-lavender-light) 72%, white);
+  border-color: var(--color-lavender-mid);
+}
 .overdue-tag {
   display: inline-flex;
   align-items: center;
@@ -986,6 +998,11 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
   background: var(--color-rose-light);
   border: 1.5px solid var(--color-rose);
   color: var(--color-rose);
+}
+.overdue-tag.tag--snoozed {
+  background: var(--color-lavender-light);
+  border: 1.5px solid var(--color-lavender-mid);
+  color: var(--color-vast-ink);
 }
 .missed-warning-text {
   margin: 6px 0 0;
@@ -1970,11 +1987,21 @@ body.keyboard-open .auth-shell {
   border-radius: 50%;
   width: 32px;
   height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  flex: 0 0 32px;
+  padding: 0;
   display: grid;
   place-items: center;
   color: var(--color-vast-ink);
+  line-height: 0;
   cursor: pointer;
   transition: background var(--duration-base) ease;
+}
+.chrome-notes-btn svg {
+  display: block;
+  width: 16px;
+  height: 16px;
 }
 .chrome-notes-btn:hover {
   background: var(--color-lumen-cream);
@@ -1987,8 +2014,9 @@ body.keyboard-open .auth-shell {
   color: white;
   font-size: 8px;
   font-weight: 800;
-  width: 15px;
+  min-width: 16px;
   height: 15px;
+  padding: 0 3px;
   border-radius: 50%;
   display: grid;
   place-items: center;
@@ -2072,6 +2100,10 @@ body.keyboard-open .auth-shell {
   overscroll-behavior: contain;
   touch-action: pan-y;
 }
+.bottom-sheet-content.snooze-sheet {
+  height: auto;
+  max-height: min(76dvh, 560px);
+}
 .bottom-sheet-header {
   padding: 20px 24px;
   border-bottom: 1px solid var(--color-lumen-stone);
@@ -2119,6 +2151,88 @@ body.keyboard-open .auth-shell {
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
+}
+.snooze-sheet-body {
+  gap: 14px;
+}
+.snooze-dose-summary {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--color-lumen-cream);
+  border: 1px solid var(--color-lumen-stone);
+}
+.snooze-dose-summary span {
+  width: fit-content;
+  padding: 4px 9px;
+  border-radius: 9999px;
+  background: var(--color-lumen-stone);
+  color: var(--color-charcoal);
+  font-size: 12px;
+  font-weight: 800;
+}
+.snooze-dose-summary strong {
+  color: var(--color-vast-ink);
+  font-size: 16px;
+  line-height: 1.25;
+}
+.snooze-dose-summary p {
+  margin: 0;
+  color: var(--color-fog);
+  font-size: 13px;
+  line-height: 1.35;
+}
+.snooze-quick-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.snooze-quick-grid button {
+  display: grid;
+  gap: 4px;
+  justify-items: center;
+  min-height: 68px;
+  padding: 10px 8px;
+  border: 1.5px solid var(--color-lumen-stone);
+  border-radius: 12px;
+  background: var(--surface-card);
+  color: var(--color-vast-ink);
+}
+.snooze-quick-grid button strong {
+  font-size: 14px;
+}
+.snooze-quick-grid button span {
+  color: var(--color-fog);
+  font-size: 12px;
+  font-weight: 700;
+}
+.snooze-custom-field {
+  display: grid;
+  gap: 8px;
+  color: var(--color-charcoal);
+  font-size: 13px;
+  font-weight: 800;
+}
+.snooze-custom-field > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+.snooze-custom-field input {
+  width: 100%;
+  border: 1.5px solid var(--color-lumen-stone);
+  border-radius: 12px;
+  padding: 12px 13px;
+  background: var(--surface-card);
+  color: var(--color-vast-ink);
+  font-weight: 800;
+}
+.snooze-custom-field span {
+  color: var(--color-fog);
+  font-size: 13px;
+  font-weight: 800;
 }
 .sheet-tabs {
   display: flex;

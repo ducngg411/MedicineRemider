@@ -1,6 +1,7 @@
 import type { CareData } from './types';
 import { demoData } from './demo-data';
 import { getTodayLocalDate } from './date';
+import { normalizeDurationDays } from './schedule';
 import { hydrateUserSettings } from './water';
 
 const STORAGE_KEY = 'thuoc-nhac-care-data-v4';
@@ -43,10 +44,16 @@ function normalizeCareData(data: Partial<CareData>): CareData {
   return {
     treatmentCourses,
     activeCourseId,
-    medications: (data.medications ?? []).map((medication) => ({
-      ...medication,
-      courseId: medication.courseId ?? activeCourseId,
-    })),
+    medications: (data.medications ?? []).map((medication) => {
+      const durationDays = normalizeDurationDays(medication.durationDays);
+      const endDate = medication.endDate && medication.endDate >= medication.startDate ? medication.endDate : undefined;
+      return {
+        ...medication,
+        courseId: medication.courseId ?? activeCourseId,
+        endDate,
+        durationDays,
+      };
+    }),
     doseEvents: data.doseEvents ?? [],
     appointments: (data.appointments ?? []).map((appointment) => ({
       ...appointment,

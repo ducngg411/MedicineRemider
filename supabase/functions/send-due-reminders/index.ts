@@ -114,7 +114,7 @@ Deno.serve(async (req) => {
 });
 
 function buildNotificationPayload(reminder: {
-  notification_kind: 'soon' | 'due' | 'late' | 'missed';
+  notification_kind: 'soon' | 'due' | 'late' | 'missed' | 'snoozed';
   patient_name: string;
   medication_name: string;
   scheduled_at: string;
@@ -141,6 +141,13 @@ function buildNotificationPayload(reminder: {
     return {
       title: 'C\u00f3 li\u1ec1u b\u1ecb b\u1ecf l\u1ee1',
       body: `${namePrefix}${medicine} \u0111\u00e3 qu\u00e1 gi\u1edd. M\u1edf app \u0111\u1ec3 x\u1eed l\u00fd.`,
+    };
+  }
+
+  if (reminder.notification_kind === 'snoozed') {
+    return {
+      title: 'Nh\u1eafc l\u1ea1i thu\u1ed1c',
+      body: `${namePrefix}\u0111\u00e3 \u0111\u1ebfn gi\u1edd nh\u1eafc l\u1ea1i ${medicine} l\u00fac ${time}.`,
     };
   }
 

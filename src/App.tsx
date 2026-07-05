@@ -35,7 +35,7 @@ import type { LucideIcon } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { demoExtractionDraft } from './lib/demo-data';
 import { addDays, formatDateParts, formatShortDateTime, formatTime, formatWeekday, getTodayLocalDate, getMsUntilMidnightVN, toDateInputValue } from './lib/date';
-import { buildDoseInstances, normalizeTimes, summarizeDoses } from './lib/schedule';
+import { buildDoseInstances, isMedicationTrackedByActiveCourse, normalizeDurationDays, normalizeTimes, summarizeDoses } from './lib/schedule';
 import { loadCareData, resetCareData, saveCareData } from './lib/storage';
 import { getInstallState, subscribeToNotifications } from './lib/pwa';
 import { calculateDailyWaterGoal, generateWaterReminders, getNextWaterReminder, hydrateUserSettings, hydrateWaterConfig } from './lib/water';
@@ -131,16 +131,21 @@ export function App() {
 
   const activeCourse = useMemo(() => getActiveCourse(data), [data]);
   const activeCourseId = activeCourse?.id;
+  const knownCourseIds = useMemo(() => new Set(data.treatmentCourses.map((course) => course.id)), [data.treatmentCourses]);
+  const scheduleNow = useMemo(() => new Date(nowMs), [nowMs]);
   const activeMedications = useMemo(
-    () => data.medications.filter((medication) => medication.courseId === activeCourseId),
-    [data.medications, activeCourseId],
+    () => data.medications.filter((medication) => isMedicationTrackedByActiveCourse(medication, activeCourseId, knownCourseIds)),
+    [data.medications, activeCourseId, knownCourseIds],
   );
   const activeDoctorNotes = useMemo(
     () => data.doctorNotes.filter((note) => note.courseId === activeCourseId),
     [data.doctorNotes, activeCourseId],
   );
 
-  const doses = useMemo(() => buildDoseInstances(activeMedications, data.doseEvents), [activeMedications, data.doseEvents]);
+  const doses = useMemo(
+    () => buildDoseInstances(activeMedications, data.doseEvents, scheduleNow, scheduleNow),
+    [activeMedications, data.doseEvents, scheduleNow],
+  );
 
   useEffect(() => {
     if ('scrollRestoration' in window.history) {
@@ -161,7 +166,7 @@ export function App() {
     const labels = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
     const list: DayStreak[] = [];
     const todayStr = getTodayLocalDate();
-    const now = new Date();
+    const now = scheduleNow;
 
     for (let i = 6; i >= 0; i--) {
       const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
@@ -200,7 +205,7 @@ export function App() {
       });
     }
     return list;
-  }, [activeMedications, data.doseEvents]);
+  }, [activeMedications, data.doseEvents, scheduleNow]);
 
   const upcomingAppointments = useMemo(
     () => data.appointments.slice().sort((a, b) => new Date(a.appointmentAt).getTime() - new Date(b.appointmentAt).getTime()),
@@ -331,17 +336,31 @@ export function App() {
       if (appointmentsResult.error) throw appointmentsResult.error;
       if (notesResult.error) throw notesResult.error;
 
-      const courses = (coursesResult.data ?? []).map(mapTreatmentCourseFromDb);
+      const courseRows = (coursesResult.data ?? []) as Array<Record<string, unknown>>;
+      const medicationRows = (medicationsResult.data ?? []) as Array<Record<string, unknown>>;
+      const appointmentRows = (appointmentsResult.data ?? []) as Array<Record<string, unknown>>;
+      const noteRows = (notesResult.data ?? []) as Array<Record<string, unknown>>;
+      const eventRows = (eventsResult.data ?? []) as Array<Record<string, unknown>>;
+      const courses = courseRows.map(mapTreatmentCourseFromDb);
+      const remoteActiveCourseId = courses.find((course) => course.status === 'active')?.id ?? courses[0]?.id;
+      const remoteCourseIds = new Set(courses.map((course) => course.id));
       setData((current) => ({
         treatmentCourses: courses,
-        activeCourseId: courses.find((course) => course.status === 'active')?.id ?? courses[0]?.id,
-        medications: (medicationsResult.data ?? []).map(mapMedicationFromDb),
-        doseEvents: (eventsResult.data ?? []).map(mapDoseEventFromDb),
-        appointments: (appointmentsResult.data ?? []).map(mapAppointmentFromDb),
-        doctorNotes: (notesResult.data ?? []).map(mapDoctorNoteFromDb),
+        activeCourseId: remoteActiveCourseId,
+        medications: medicationRows
+          .map(mapMedicationFromDb)
+          .map((medication) => attachFallbackCourse(medication, remoteActiveCourseId, remoteCourseIds)),
+        doseEvents: eventRows.map(mapDoseEventFromDb),
+        appointments: appointmentRows
+          .map(mapAppointmentFromDb)
+          .map((appointment) => attachFallbackCourse(appointment, remoteActiveCourseId, remoteCourseIds)),
+        doctorNotes: noteRows
+          .map(mapDoctorNoteFromDb)
+          .map((note) => attachFallbackCourse(note, remoteActiveCourseId, remoteCourseIds)),
         userSettings: mapUserSettingsFromDb(profileResult.data),
         healthPhotoEntries: current.healthPhotoEntries,
       }));
+      void repairRemoteCourseLinks(remoteActiveCourseId, medicationRows, appointmentRows, noteRows);
       setSyncMode('remote');
       // sync success is silent — no user-facing notice needed
     } catch (error) {
@@ -476,7 +495,7 @@ export function App() {
     }
   }
 
-  async function updateDose(instance: DoseInstance, status: DoseStatus) {
+  async function updateDose(instance: DoseInstance, status: DoseStatus, options?: { snoozedUntil?: Date }) {
     // Prevent double-marking: if already taken/skipped, ignore
     if (instance.status === 'taken' || instance.status === 'taken_late' || instance.status === 'skipped') return;
 
@@ -494,6 +513,7 @@ export function App() {
       scheduledAt: instance.scheduledAt.toISOString(),
       status: savedStatus,
       actedAt: new Date().toISOString(),
+      snoozedUntil: status === 'snoozed' ? options?.snoozedUntil?.toISOString() : undefined,
     };
 
     setData((current) => ({
@@ -582,7 +602,9 @@ export function App() {
     const targetCourseMode = data.medications.length > 0 ? courseAddMode : 'current';
     const coursePlan = prepareCourseForAdd(data, targetCourseMode, 'gemini', draft.patientName);
     const meds: Medication[] = draft.medicines.filter((medicine) => medicine.name.trim() && medicine.instructions.trim()).map((medicine) => {
-      const durationDays = medicine.durationDays ?? 30;
+      const form = inferMedicineForm(medicine.form, medicine.name, medicine.instructions);
+      const durationDays = normalizeDurationDays(medicine.durationDays) ?? (isUnitForm(form) ? 30 : undefined);
+      const reviewNotes = getActionableReviewNotes(medicine.needsReview);
       return {
         id: crypto.randomUUID(),
         patientName: draft.patientName || 'Người dùng',
@@ -590,16 +612,16 @@ export function App() {
         name: medicine.name,
         genericName: medicine.genericName,
         strength: medicine.strength,
-        form: inferMedicineForm(medicine.form, medicine.name, medicine.instructions),
+        form,
         instructions: medicine.instructions,
         source: 'gemini',
         startDate,
-        endDate: addDays(startDate, durationDays - 1),
+        endDate: durationDays ? addDays(startDate, durationDays - 1) : undefined,
         scheduleTimes: normalizeTimes(medicine.scheduleTimes?.length ? medicine.scheduleTimes : ['08:30']),
         durationDays,
         quantity: medicine.quantity,
         remaining: medicine.quantity,
-        doctorNotes: medicine.needsReview?.join(', '),
+        doctorNotes: reviewNotes.length ? reviewNotes.join(', ') : undefined,
         createdAt: new Date().toISOString(),
       };
     });
@@ -1317,7 +1339,7 @@ function TopChrome({
       <header className="app-header">
         <div className="header-top-row">
           <p className="eyebrow">{greetingName ? `Ê, ${greetingName}!` : 'Ê!'}</p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div className="header-actions">
             {notesCount > 0 && (
               <button className="chrome-notes-btn" onClick={onOpenNotes} aria-label="Xem dặn dò bác sĩ">
                 <BookOpen size={16} />
@@ -3202,6 +3224,85 @@ function BottomNav({ view, onView }: { view: View; onView: (view: View) => void 
   );
 }
 
+function attachFallbackCourse<T extends { courseId?: string }>(
+  item: T,
+  activeCourseId: string | undefined,
+  knownCourseIds: Set<string>,
+): T {
+  if (!activeCourseId) return item;
+  if (item.courseId && knownCourseIds.has(item.courseId)) return item;
+  return { ...item, courseId: activeCourseId };
+}
+
+function getActionableReviewNotes(notes: string[] | undefined) {
+  return (notes ?? []).map((note) => note.trim()).filter((note) => note && !isMissingDurationReview(note));
+}
+
+function isMissingDurationReview(note: string) {
+  const normalized = note.toLowerCase();
+  return (
+    normalized.includes('duration not explicitly') ||
+    normalized.includes('duration not stated') ||
+    normalized.includes('duration missing') ||
+    normalized.includes('không thấy thời gian dùng') ||
+    normalized.includes('khong thay thoi gian dung') ||
+    normalized.includes('chưa rõ thời gian dùng') ||
+    normalized.includes('chua ro thoi gian dung')
+  );
+}
+
+function getRowsMissingCourse(rows: Array<Record<string, unknown>>) {
+  return rows
+    .filter((row) => !row.course_id)
+    .map((row) => String(row.id ?? ''))
+    .filter(Boolean);
+}
+
+function toDbDateString(value: unknown) {
+  return typeof value === 'string' ? value.slice(0, 10) : '';
+}
+
+function getRowsWithInvalidMedicationDuration(rows: Array<Record<string, unknown>>) {
+  return rows
+    .filter((row) => {
+      const startDate = toDbDateString(row.start_date);
+      const endDate = toDbDateString(row.end_date);
+      if (startDate && endDate && endDate < startDate) return true;
+      if (row.duration_days == null || row.duration_days === '') return false;
+      const durationDays = Number(row.duration_days);
+      return Number.isFinite(durationDays) && durationDays <= 0;
+    })
+    .map((row) => String(row.id ?? ''))
+    .filter(Boolean);
+}
+
+async function repairRemoteCourseLinks(
+  activeCourseId: string | undefined,
+  medicationRows: Array<Record<string, unknown>>,
+  appointmentRows: Array<Record<string, unknown>>,
+  noteRows: Array<Record<string, unknown>>,
+) {
+  const client = supabase;
+  if (!client || !activeCourseId) return;
+
+  const medicationIds = getRowsMissingCourse(medicationRows);
+  const appointmentIds = getRowsMissingCourse(appointmentRows);
+  const noteIds = getRowsMissingCourse(noteRows);
+  const invalidDurationMedicationIds = getRowsWithInvalidMedicationDuration(medicationRows);
+  const writes = [];
+  if (medicationIds.length) writes.push(client.from('medications').update({ course_id: activeCourseId }).in('id', medicationIds));
+  if (appointmentIds.length) writes.push(client.from('appointments').update({ course_id: activeCourseId }).in('id', appointmentIds));
+  if (noteIds.length) writes.push(client.from('doctor_notes').update({ course_id: activeCourseId }).in('id', noteIds));
+  if (invalidDurationMedicationIds.length) {
+    writes.push(client.from('medications').update({ end_date: null, duration_days: null }).in('id', invalidDurationMedicationIds));
+  }
+
+  if (!writes.length) return;
+  const results = await Promise.all(writes);
+  const error = results.find((result) => result.error)?.error;
+  if (error) console.error(error);
+}
+
 function mapTreatmentCourseFromDb(row: Record<string, unknown>): TreatmentCourse {
   return {
     id: String(row.id),
@@ -3228,6 +3329,9 @@ function mapTreatmentCourseToDb(course: TreatmentCourse, householdId: string) {
 }
 
 function mapMedicationFromDb(row: Record<string, unknown>): Medication {
+  const startDate = String(row.start_date);
+  const endDate = row.end_date ? String(row.end_date) : undefined;
+  const durationDays = normalizeDurationDays(row.duration_days == null ? undefined : Number(row.duration_days));
   return {
     id: String(row.id),
     courseId: row.course_id ? String(row.course_id) : undefined,
@@ -3238,10 +3342,10 @@ function mapMedicationFromDb(row: Record<string, unknown>): Medication {
     instructions: String(row.instructions ?? ''),
     form: row.form ? String(row.form) : undefined,
     source: (row.source as Medication['source']) ?? 'manual',
-    startDate: String(row.start_date),
-    endDate: row.end_date ? String(row.end_date) : undefined,
+    startDate,
+    endDate: endDate && endDate >= startDate ? endDate : undefined,
     scheduleTimes: Array.isArray(row.schedule_times) ? row.schedule_times.map((time) => String(time).slice(0, 5)) : [],
-    durationDays: row.duration_days ? Number(row.duration_days) : undefined,
+    durationDays,
     quantity: row.quantity == null ? undefined : Number(row.quantity),
     remaining: row.remaining == null ? undefined : Number(row.remaining),
     doctorNotes: row.doctor_notes ? String(row.doctor_notes) : undefined,
@@ -3279,6 +3383,7 @@ function mapDoseEventFromDb(row: Record<string, unknown>): DoseEvent {
     scheduledAt: String(row.scheduled_at),
     status: row.status as DoseStatus,
     actedAt: row.acted_at ? String(row.acted_at) : undefined,
+    snoozedUntil: row.snoozed_until ? String(row.snoozed_until) : undefined,
     note: row.note ? String(row.note) : undefined,
   };
 }
@@ -3291,6 +3396,7 @@ function mapDoseEventToDb(event: DoseEvent, householdId: string) {
     scheduled_at: event.scheduledAt,
     status: event.status,
     acted_at: event.actedAt || null,
+    snoozed_until: event.snoozedUntil || null,
     note: event.note || null,
   };
 }
@@ -3437,6 +3543,7 @@ function prepareCourseForAdd(
 function inferMedicineForm(form: string | undefined, name: string, instructions: string) {
   if (form?.trim()) return form.trim().toLowerCase();
   const text = `${name} ${instructions}`.toLowerCase();
+  if (text.includes('sữa rửa mặt') || text.includes('sua rua mat') || text.includes('cleanser')) return 'chai';
   if (text.includes('tuýp') || text.includes('tuyp') || text.includes('cream') || text.includes('kem')) return 'tuýp';
   if (text.includes('lọ') || text.includes('lo ') || text.includes('ml') || text.includes('solution')) return 'lọ';
   if (text.includes('chai')) return 'chai';

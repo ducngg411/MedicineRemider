@@ -38,6 +38,7 @@ export interface DoseEvent {
   scheduledAt: string;
   status: DoseStatus;
   actedAt?: string;
+  snoozedUntil?: string;
   note?: string;
 }
 
@@ -111,6 +112,7 @@ export interface DoseInstance {
   id: string;
   medication: Medication;
   scheduledAt: Date;
+  effectiveAt: Date;
   status: DoseStatus;
   event?: DoseEvent;
 }
