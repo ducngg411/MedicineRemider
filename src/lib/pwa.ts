@@ -25,13 +25,18 @@ export async function subscribeToNotifications() {
     throw new Error('Thieu VITE_PUBLIC_VAPID_KEY.');
   }
 
+  if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+    throw new Error('Trinh duyet chua ho tro notification.');
+  }
+
   const permission = await Notification.requestPermission();
   if (permission !== 'granted') {
     throw new Error('Người dùng chưa cấp quyền notification.');
   }
 
   const registration = await navigator.serviceWorker.ready;
-  const subscription = await registration.pushManager.subscribe({
+  const existingSubscription = await registration.pushManager.getSubscription();
+  const subscription = existingSubscription ?? await registration.pushManager.subscribe({
     userVisibleOnly: true,
     applicationServerKey: urlBase64ToUint8Array(publicVapidKey),
   });
@@ -47,6 +52,23 @@ export async function subscribeToNotifications() {
   }
 
   return subscription.toJSON();
+}
+
+export async function disablePushSubscriptions() {
+  if (!supabase) return;
+
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  if (authError || !authData.user) return;
+
+  const { error } = await supabase
+    .from('push_subscriptions')
+    .update({
+      enabled: false,
+      last_seen_at: new Date().toISOString(),
+    })
+    .eq('user_id', authData.user.id);
+
+  if (error) throw error;
 }
 
 function urlBase64ToUint8Array(base64String: string) {

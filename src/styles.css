@@ -1380,6 +1380,18 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
   background: var(--color-vast-ink);
   box-shadow: var(--shadow-md);
 }
+.dark-chamber .notification-toggle-row {
+  padding: 0 0 2px;
+}
+.dark-chamber .notification-toggle-row strong {
+  color: var(--color-lumen-cream);
+}
+.dark-chamber .notification-toggle-row small {
+  color: rgba(255,255,220,.62);
+}
+.dark-chamber .notification-toggle-row input[type="checkbox"] {
+  accent-color: var(--color-lavender-whisper);
+}
 .note-item {
   padding: 12px 14px;
   border: 1px solid rgba(255,255,235,.15);

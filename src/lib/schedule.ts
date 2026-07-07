@@ -87,6 +87,80 @@ export function eventKey(medicationId: string, scheduledAt: string) {
   return `${medicationId}:${new Date(scheduledAt).toISOString()}`;
 }
 
+export function isUserActionDoseEvent(event: DoseEvent) {
+  return event.status === 'taken' || event.status === 'taken_late' || event.status === 'skipped' || event.status === 'snoozed';
+}
+
+export function mergeDoseEvents(
+  remoteEvents: DoseEvent[],
+  localEvents: DoseEvent[],
+  medicationIds?: Set<string>,
+) {
+  const byKey = new Map<string, DoseEvent>();
+
+  for (const event of remoteEvents) {
+    if (!isDoseEventForKnownMedication(event, medicationIds)) continue;
+    byKey.set(eventKey(event.medicationId, event.scheduledAt), event);
+  }
+
+  for (const event of localEvents) {
+    if (!isDoseEventForKnownMedication(event, medicationIds)) continue;
+    if (!isUserActionDoseEvent(event)) continue;
+
+    const key = eventKey(event.medicationId, event.scheduledAt);
+    if (shouldUseDoseEventCandidate(byKey.get(key), event)) {
+      byKey.set(key, event);
+    }
+  }
+
+  return Array.from(byKey.values()).sort((a, b) => {
+    const bTime = new Date(b.scheduledAt).getTime();
+    const aTime = new Date(a.scheduledAt).getTime();
+    return (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
+  });
+}
+
+export function getDoseEventsNeedingRemoteSync(
+  remoteEvents: DoseEvent[],
+  mergedEvents: DoseEvent[],
+  medicationIds?: Set<string>,
+) {
+  const remoteByKey = new Map(remoteEvents.map((event) => [eventKey(event.medicationId, event.scheduledAt), event]));
+
+  return mergedEvents.filter((event) => (
+    isDoseEventForKnownMedication(event, medicationIds) &&
+    isUserActionDoseEvent(event) &&
+    shouldUseDoseEventCandidate(remoteByKey.get(eventKey(event.medicationId, event.scheduledAt)), event)
+  ));
+}
+
+function isDoseEventForKnownMedication(event: DoseEvent, medicationIds?: Set<string>) {
+  return !medicationIds || medicationIds.has(event.medicationId);
+}
+
+function shouldUseDoseEventCandidate(current: DoseEvent | undefined, candidate: DoseEvent) {
+  if (!current) return true;
+
+  const currentIsAction = isUserActionDoseEvent(current);
+  const candidateIsAction = isUserActionDoseEvent(candidate);
+  if (candidateIsAction !== currentIsAction) return candidateIsAction;
+  if (!candidateIsAction) return false;
+
+  const currentActedAt = getDoseEventActedAtMs(current);
+  const candidateActedAt = getDoseEventActedAtMs(candidate);
+  if (Number.isFinite(candidateActedAt) || Number.isFinite(currentActedAt)) {
+    return candidateActedAt > currentActedAt;
+  }
+
+  return false;
+}
+
+function getDoseEventActedAtMs(event: DoseEvent) {
+  if (!event.actedAt) return Number.NEGATIVE_INFINITY;
+  const actedAt = new Date(event.actedAt).getTime();
+  return Number.isFinite(actedAt) ? actedAt : Number.NEGATIVE_INFINITY;
+}
+
 export function summarizeDoses(instances: DoseInstance[]) {
   return {
     total: instances.length,

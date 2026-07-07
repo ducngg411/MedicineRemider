@@ -35,9 +35,18 @@ import type { LucideIcon } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { demoExtractionDraft } from './lib/demo-data';
 import { addDays, formatDateParts, formatShortDateTime, formatTime, formatWeekday, getTodayLocalDate, getMsUntilMidnightVN, toDateInputValue } from './lib/date';
-import { buildDoseInstances, isMedicationTrackedByActiveCourse, normalizeDurationDays, normalizeTimes, summarizeDoses } from './lib/schedule';
+import {
+  buildDoseInstances,
+  eventKey,
+  getDoseEventsNeedingRemoteSync,
+  isMedicationTrackedByActiveCourse,
+  mergeDoseEvents,
+  normalizeDurationDays,
+  normalizeTimes,
+  summarizeDoses,
+} from './lib/schedule';
 import { loadCareData, resetCareData, saveCareData } from './lib/storage';
-import { getInstallState, subscribeToNotifications } from './lib/pwa';
+import { disablePushSubscriptions, getInstallState, subscribeToNotifications } from './lib/pwa';
 import { calculateDailyWaterGoal, generateWaterReminders, getNextWaterReminder, hydrateUserSettings, hydrateWaterConfig } from './lib/water';
 import { deleteTrackingImage, getTrackingImageUrl, saveTrackingImage } from './lib/tracking-images';
 import {
@@ -128,6 +137,7 @@ export function App() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [pwaState, setPwaState] = useState(() => (typeof window === 'undefined' ? null : getInstallState()));
   const [showNotesSheet, setShowNotesSheet] = useState(false);
+  const pendingDoseEventsRef = useRef<Map<string, DoseEvent>>(new Map());
 
   const activeCourse = useMemo(() => getActiveCourse(data), [data]);
   const activeCourseId = activeCourse?.id;
@@ -215,6 +225,12 @@ export function App() {
   useEffect(() => {
     saveCareData(data);
   }, [data]);
+
+  useEffect(() => {
+    if (!householdId || pendingDoseEventsRef.current.size === 0) return;
+    const pendingDoseEvents = Array.from(pendingDoseEventsRef.current.values());
+    void syncDoseEventsToRemote(pendingDoseEvents, householdId);
+  }, [householdId, data.doseEvents]);
 
   // Midnight refresh — rebuild dose list when VN date changes
   useEffect(() => {
@@ -344,23 +360,44 @@ export function App() {
       const courses = courseRows.map(mapTreatmentCourseFromDb);
       const remoteActiveCourseId = courses.find((course) => course.status === 'active')?.id ?? courses[0]?.id;
       const remoteCourseIds = new Set(courses.map((course) => course.id));
-      setData((current) => ({
-        treatmentCourses: courses,
-        activeCourseId: remoteActiveCourseId,
-        medications: medicationRows
-          .map(mapMedicationFromDb)
-          .map((medication) => attachFallbackCourse(medication, remoteActiveCourseId, remoteCourseIds)),
-        doseEvents: eventRows.map(mapDoseEventFromDb),
-        appointments: appointmentRows
-          .map(mapAppointmentFromDb)
-          .map((appointment) => attachFallbackCourse(appointment, remoteActiveCourseId, remoteCourseIds)),
-        doctorNotes: noteRows
-          .map(mapDoctorNoteFromDb)
-          .map((note) => attachFallbackCourse(note, remoteActiveCourseId, remoteCourseIds)),
-        userSettings: mapUserSettingsFromDb(profileResult.data),
-        healthPhotoEntries: current.healthPhotoEntries,
-      }));
+      const remoteMedications = medicationRows
+        .map(mapMedicationFromDb)
+        .map((medication) => attachFallbackCourse(medication, remoteActiveCourseId, remoteCourseIds));
+      const remoteMedicationIds = new Set(remoteMedications.map((medication) => medication.id));
+      const remoteDoseEvents = eventRows.map(mapDoseEventFromDb);
+      const localDoseEventsForRepair = [
+        ...data.doseEvents,
+        ...Array.from(pendingDoseEventsRef.current.values()),
+      ];
+      const repairedDoseEvents = mergeDoseEvents(remoteDoseEvents, localDoseEventsForRepair, remoteMedicationIds);
+      const doseEventsToRepair = getDoseEventsNeedingRemoteSync(remoteDoseEvents, repairedDoseEvents, remoteMedicationIds);
+
+      setData((current) => {
+        const localDoseEvents = [
+          ...current.doseEvents,
+          ...Array.from(pendingDoseEventsRef.current.values()),
+        ];
+        const doseEvents = mergeDoseEvents(remoteDoseEvents, localDoseEvents, remoteMedicationIds);
+
+        return {
+          treatmentCourses: courses,
+          activeCourseId: remoteActiveCourseId,
+          medications: remoteMedications,
+          doseEvents,
+          appointments: appointmentRows
+            .map(mapAppointmentFromDb)
+            .map((appointment) => attachFallbackCourse(appointment, remoteActiveCourseId, remoteCourseIds)),
+          doctorNotes: noteRows
+            .map(mapDoctorNoteFromDb)
+            .map((note) => attachFallbackCourse(note, remoteActiveCourseId, remoteCourseIds)),
+          userSettings: mapUserSettingsFromDb(profileResult.data),
+          healthPhotoEntries: current.healthPhotoEntries,
+        };
+      });
       void repairRemoteCourseLinks(remoteActiveCourseId, medicationRows, appointmentRows, noteRows);
+      if (doseEventsToRepair.length) {
+        void syncDoseEventsToRemote(doseEventsToRepair, nextHouseholdId);
+      }
       setSyncMode('remote');
       // sync success is silent — no user-facing notice needed
     } catch (error) {
@@ -495,6 +532,44 @@ export function App() {
     }
   }
 
+  async function syncDoseEventToRemote(event: DoseEvent, targetHouseholdId = householdId, nextRemaining?: number) {
+    if (!supabase || !targetHouseholdId) return false;
+    const client = supabase;
+
+    const saveEvent = async (doseEvent: DoseEvent) => client.from('dose_events').upsert(mapDoseEventToDb(doseEvent, targetHouseholdId), {
+      onConflict: 'medication_id,scheduled_at',
+    });
+
+    let eventToSave = event;
+    let eventResult = await saveEvent(eventToSave);
+
+    if (eventResult.error && event.status === 'taken_late' && isTakenLateEnumError(eventResult.error)) {
+      eventToSave = { ...event, status: 'taken' };
+      eventResult = await saveEvent(eventToSave);
+      if (!eventResult.error) {
+        setNotice('Server chưa hỗ trợ nhãn uống muộn, đã lưu tạm là đã uống.');
+      }
+    }
+
+    const stockResult = nextRemaining !== undefined
+      ? await client.from('medications').update({ remaining: nextRemaining }).eq('id', event.medicationId)
+      : { error: null };
+    const error = eventResult.error ?? stockResult.error;
+
+    if (error) {
+      console.error(error);
+      setNotice('Đã lưu trên máy này, nhưng chưa đồng bộ được Supabase.');
+      return false;
+    }
+
+    pendingDoseEventsRef.current.delete(eventKey(event.medicationId, event.scheduledAt));
+    return true;
+  }
+
+  async function syncDoseEventsToRemote(events: DoseEvent[], targetHouseholdId = householdId) {
+    await Promise.all(events.map((event) => syncDoseEventToRemote(event, targetHouseholdId)));
+  }
+
   async function updateDose(instance: DoseInstance, status: DoseStatus, options?: { snoozedUntil?: Date }) {
     // Prevent double-marking: if already taken/skipped, ignore
     if (instance.status === 'taken' || instance.status === 'taken_late' || instance.status === 'skipped') return;
@@ -515,10 +590,15 @@ export function App() {
       actedAt: new Date().toISOString(),
       snoozedUntil: status === 'snoozed' ? options?.snoozedUntil?.toISOString() : undefined,
     };
+    pendingDoseEventsRef.current.set(eventKey(event.medicationId, event.scheduledAt), event);
+    const nextEventKey = eventKey(event.medicationId, event.scheduledAt);
 
     setData((current) => ({
       ...current,
-      doseEvents: [event, ...current.doseEvents.filter((item) => item.id !== event.id)],
+      doseEvents: [
+        event,
+        ...current.doseEvents.filter((item) => item.id !== event.id && eventKey(item.medicationId, item.scheduledAt) !== nextEventKey),
+      ],
       medications: current.medications.map((medication) => {
         if (medication.id !== instance.medication.id) return medication;
         if (status !== 'taken' && status !== 'taken_late') return medication;
@@ -528,18 +608,7 @@ export function App() {
       }),
     }));
 
-    if (supabase && syncMode === 'remote' && householdId) {
-      const [eventResult, stockResult] = await Promise.all([
-        supabase.from('dose_events').upsert(mapDoseEventToDb(event, householdId), {
-          onConflict: 'medication_id,scheduled_at',
-        }),
-        nextRemaining !== undefined
-          ? supabase.from('medications').update({ remaining: nextRemaining }).eq('id', instance.medication.id)
-          : Promise.resolve({ error: null }),
-      ]);
-      const error = eventResult.error ?? stockResult.error;
-      if (error) console.error(error);
-    }
+    await syncDoseEventToRemote(event, householdId, nextRemaining);
   }
 
   async function extractPrescription(file?: File) {
@@ -684,6 +753,26 @@ export function App() {
       setNotice(error instanceof Error ? error.message : 'Chưa bật được notification.');
       return false;
     }
+  }
+
+  async function disableNotifications() {
+    try {
+      await updateUserSettings({
+        ...data.userSettings,
+        notificationEnabled: false,
+      });
+      await disablePushSubscriptions();
+      setPwaState(getInstallState());
+      setNotice('Đã tắt nhắc uống thuốc và nhắc nước trong app.');
+      return true;
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Chưa tắt được notification.');
+      return false;
+    }
+  }
+
+  async function setNotificationsEnabled(enabled: boolean) {
+    return enabled ? enableNotifications() : disableNotifications();
   }
 
   async function deleteMedication(id: string) {
@@ -970,7 +1059,7 @@ export function App() {
             onAuthEmail={setAuthEmail}
             onSendMagicLink={sendMagicLink}
             onSync={loadRemoteData}
-            onNotify={enableNotifications}
+            onNotificationsChange={setNotificationsEnabled}
             userSettings={data.userSettings}
             onUserSettingsChange={updateUserSettings}
             onWaterConfigChange={updateWaterReminder}
@@ -3012,7 +3101,7 @@ function SettingsView({
   onAuthEmail,
   onSendMagicLink,
   onSync,
-  onNotify,
+  onNotificationsChange,
   onUserSettingsChange,
   onWaterConfigChange,
   onReset,
@@ -3025,13 +3114,14 @@ function SettingsView({
   onAuthEmail: (email: string) => void;
   onSendMagicLink: () => void;
   onSync: () => void;
-  onNotify: () => Promise<boolean>;
+  onNotificationsChange: (enabled: boolean) => Promise<boolean>;
   onUserSettingsChange: (settings: UserSettings) => Promise<void>;
   onWaterConfigChange: (config: WaterReminderConfig) => Promise<void>;
   onReset: () => void;
 }) {
   const waterConfig = userSettings.waterReminder;
   const [displayNameDraft, setDisplayNameDraft] = useState(userSettings.displayName ?? '');
+  const [isChangingNotifications, setIsChangingNotifications] = useState(false);
   const normalizedDisplayNameDraft = displayNameDraft.trim().replace(/\s+/g, ' ');
   const hasDisplayNameChange = normalizedDisplayNameDraft !== (userSettings.displayName ?? '');
 
@@ -3046,6 +3136,15 @@ function SettingsView({
   function saveDisplayName() {
     if (!normalizedDisplayNameDraft) return;
     void onUserSettingsChange({ ...userSettings, displayName: normalizedDisplayNameDraft });
+  }
+
+  async function handleNotificationToggle(enabled: boolean) {
+    setIsChangingNotifications(true);
+    try {
+      await onNotificationsChange(enabled);
+    } finally {
+      setIsChangingNotifications(false);
+    }
   }
 
   return (
@@ -3115,16 +3214,40 @@ function SettingsView({
             <Bell size={14} />
             Thông báo
           </span>
-          <h3>Bật nhắc uống thuốc</h3>
+          <h3>Nhắc uống thuốc & uống nước</h3>
         </div>
+        <label className="toggle-row notification-toggle-row">
+          <span>
+            <strong>Thông báo trong app</strong>
+            <small>
+              {isChangingNotifications
+                ? 'Đang cập nhật...'
+                : userSettings.notificationEnabled
+                  ? 'Đang bật. App sẽ gửi nhắc thuốc và nhắc nước khi đến giờ.'
+                  : 'Đang tắt. Lịch vẫn giữ nguyên, chỉ không gửi notification.'}
+            </small>
+          </span>
+          <input
+            type="checkbox"
+            checked={userSettings.notificationEnabled}
+            disabled={isChangingNotifications || (!userSettings.notificationEnabled && pwaState?.canNotify === false)}
+            aria-label="Bật tắt thông báo"
+            onChange={(event) => void handleNotificationToggle(event.target.checked)}
+          />
+        </label>
         <div className="settings-grid">
+          <InfoRow label="Trạng thái" value={userSettings.notificationEnabled ? 'Đang bật' : 'Đang tắt'} />
           <InfoRow label="Màn hình chính" value={pwaState?.isStandalone ? 'Đã thêm' : 'Cần thêm vào Màn hình chính'} />
           <InfoRow label="Quyền" value={notificationPermissionLabel(pwaState?.permission)} />
           <InfoRow label="Hỗ trợ thông báo" value={pwaState?.canNotify ? 'Hỗ trợ' : 'Không hỗ trợ'} />
         </div>
-        <button className="cream-button wide" onClick={onNotify}>
-          <Bell size={18} />
-          Bật nhắc trên máy này
+        <button
+          className="cream-button wide"
+          disabled={isChangingNotifications || pwaState?.canNotify === false}
+          onClick={() => void handleNotificationToggle(true)}
+        >
+          {isChangingNotifications ? <Loader2 className="spin" size={18} /> : <Bell size={18} />}
+          {userSettings.notificationEnabled ? 'Đăng ký lại thiết bị này' : 'Bật nhắc trên thiết bị này'}
         </button>
       </div>
 
@@ -3589,6 +3712,12 @@ function isAuthRateLimitError(error: unknown) {
   const candidate = error as { status?: number; code?: string; message?: string };
   const message = candidate.message?.toLowerCase() ?? '';
   return candidate.status === 429 || candidate.code === 'over_email_send_rate_limit' || message.includes('rate limit');
+}
+
+function isTakenLateEnumError(error: unknown) {
+  const candidate = error as { code?: string; message?: string; details?: string; hint?: string };
+  const text = [candidate.code, candidate.message, candidate.details, candidate.hint].filter(Boolean).join(' ').toLowerCase();
+  return text.includes('taken_late') && (candidate.code === '22P02' || text.includes('dose_status') || text.includes('enum'));
 }
 
 function syncModeLabel(syncMode: SyncMode) {

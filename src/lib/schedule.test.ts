@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { dateFromLocalDateAndTime } from './date';
-import { buildDoseInstances, inferStatus, isMedicationTrackedByActiveCourse, normalizeDurationDays, normalizeTimes, summarizeDoses } from './schedule';
+import {
+  buildDoseInstances,
+  getDoseEventsNeedingRemoteSync,
+  inferStatus,
+  isMedicationTrackedByActiveCourse,
+  mergeDoseEvents,
+  normalizeDurationDays,
+  normalizeTimes,
+  summarizeDoses,
+} from './schedule';
 import type { DoseEvent, Medication } from './types';
 
 const medication: Medication = {
@@ -156,5 +165,66 @@ describe('schedule helpers', () => {
     expect(isMedicationTrackedByActiveCourse({ courseId: 'missing-course' }, 'course-active', knownCourseIds)).toBe(true);
     expect(isMedicationTrackedByActiveCourse({ courseId: 'course-old' }, 'course-active', knownCourseIds)).toBe(false);
     expect(isMedicationTrackedByActiveCourse({ courseId: 'course-active' }, 'course-active', knownCourseIds)).toBe(true);
+  });
+
+  it('keeps a local taken-late action when remote still has the due event', () => {
+    const scheduledAt = dateFromLocalDateAndTime('2026-07-03', '08:00').toISOString();
+    const remoteEvent: DoseEvent = {
+      id: 'event-remote',
+      medicationId: 'med-1',
+      scheduledAt,
+      status: 'due',
+    };
+    const localEvent: DoseEvent = {
+      id: 'event-local',
+      medicationId: 'med-1',
+      scheduledAt,
+      status: 'taken_late',
+      actedAt: dateFromLocalDateAndTime('2026-07-03', '08:45').toISOString(),
+    };
+
+    const merged = mergeDoseEvents([remoteEvent], [localEvent], new Set(['med-1']));
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0].status).toBe('taken_late');
+    expect(getDoseEventsNeedingRemoteSync([remoteEvent], merged, new Set(['med-1']))).toEqual([localEvent]);
+  });
+
+  it('does not let an old local action overwrite an already-synced remote action', () => {
+    const scheduledAt = dateFromLocalDateAndTime('2026-07-03', '08:00').toISOString();
+    const actedAt = dateFromLocalDateAndTime('2026-07-03', '08:45').toISOString();
+    const remoteEvent: DoseEvent = {
+      id: 'event-remote',
+      medicationId: 'med-1',
+      scheduledAt,
+      status: 'taken',
+      actedAt,
+    };
+    const localEvent: DoseEvent = {
+      id: 'event-local',
+      medicationId: 'med-1',
+      scheduledAt,
+      status: 'taken_late',
+      actedAt,
+    };
+
+    const merged = mergeDoseEvents([remoteEvent], [localEvent], new Set(['med-1']));
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toEqual(remoteEvent);
+    expect(getDoseEventsNeedingRemoteSync([remoteEvent], merged, new Set(['med-1']))).toEqual([]);
+  });
+
+  it('ignores local dose events for medications missing from the remote set', () => {
+    const scheduledAt = dateFromLocalDateAndTime('2026-07-03', '08:00').toISOString();
+    const localEvent: DoseEvent = {
+      id: 'event-local',
+      medicationId: 'missing-med',
+      scheduledAt,
+      status: 'taken_late',
+      actedAt: dateFromLocalDateAndTime('2026-07-03', '08:45').toISOString(),
+    };
+
+    expect(mergeDoseEvents([], [localEvent], new Set(['med-1']))).toEqual([]);
   });
 });
